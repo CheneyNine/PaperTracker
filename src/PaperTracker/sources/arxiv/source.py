@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from PaperTracker.core.models import Paper
 from PaperTracker.core.query import SearchQuery
-from PaperTracker.sources.arxiv.client import ArxivApiClient
+from PaperTracker.sources.arxiv.client import ArxivApiClient, ArxivRateLimitedError
 from PaperTracker.sources.arxiv.fetch import collect_papers_with_time_filter
 from PaperTracker.sources.arxiv.parser import parse_arxiv_feed
 from PaperTracker.utils.log import log
@@ -83,13 +83,20 @@ class ArxivSource:
             else replace(self.search_config, max_results=max_results)
         )
 
-        return collect_papers_with_time_filter(
-            query=query,
-            scope=self.scope,
-            policy=policy,
-            fetch_page_func=self._fetch_page,
-            dedup_store=self.dedup_store,
-        )
+        try:
+            return collect_papers_with_time_filter(
+                query=query,
+                scope=self.scope,
+                policy=policy,
+                fetch_page_func=self._fetch_page,
+                dedup_store=self.dedup_store,
+            )
+        except ArxivRateLimitedError:
+            log.warning(
+                "arXiv rate limited for query %r; returning empty (cooldown active)",
+                query.name or "unnamed",
+            )
+            return []
 
     def _fetch_page(
         self,

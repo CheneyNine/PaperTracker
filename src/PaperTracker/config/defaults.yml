@@ -52,7 +52,7 @@ search:
   max_lookback_days: 30       # Max length for fill window, -1 as infinite
   max_fetch_items: 125        # Max number of items to fetch, -1 means unlimited
   fetch_batch_size: 25        # Fetch count for each round
-  arxiv_min_interval_seconds: 5.0                   # Minimum spacing between arXiv requests across pages/retries
+  arxiv_min_interval_seconds: 12.0                  # Minimum spacing between arXiv requests across pages/retries
   openalex_relevance_threshold: 0.0                    # local threshold for OpenAlex relevance_score
   ncbi_api_key_env: NCBI_API_KEY   # env var name for NCBI API key (optional, improves rate limit)
   ncbi_tool: paper-tracker         # tool identifier sent to NCBI E-utilities
