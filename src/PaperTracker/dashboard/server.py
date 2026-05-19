@@ -406,18 +406,31 @@ def _build_handler(
             base_url = str(payload.get("base_url", "") or "").strip()
             api_key = str(payload.get("api_key", "") or "").strip()
             if not base_url:
-                self.send_error(HTTPStatus.BAD_REQUEST, "base_url is required")
+                self._write_json({"error": "请填写 Base URL"}, status=HTTPStatus.BAD_REQUEST)
                 return
             if not api_key:
-                self.send_error(HTTPStatus.BAD_REQUEST, "api_key is required")
+                self._write_json({"error": "请填写 API Key"}, status=HTTPStatus.BAD_REQUEST)
                 return
             try:
                 result = discover_llm_provider_and_models(base_url=base_url, api_key=api_key)
-            except ValueError as error:
-                self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            except requests.exceptions.HTTPError as error:
+                status_code = error.response.status_code if error.response is not None else "?"
+                try:
+                    body = error.response.json() if error.response is not None else {}
+                    detail = body.get("error", {})
+                    msg = detail.get("message", "") if isinstance(detail, dict) else str(detail)
+                except Exception:
+                    msg = ""
+                self._write_json(
+                    {"error": f"接口返回 HTTP {status_code}{': ' + msg if msg else ''}"},
+                    status=HTTPStatus.BAD_GATEWAY,
+                )
                 return
             except (requests.RequestException, OSError) as error:
-                self.send_error(HTTPStatus.BAD_GATEWAY, f"LLM discovery failed: {error}")
+                self._write_json(
+                    {"error": f"连接失败：{error}"},
+                    status=HTTPStatus.BAD_GATEWAY,
+                )
                 return
             self._write_json(
                 {

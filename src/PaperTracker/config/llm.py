@@ -57,14 +57,16 @@ def load_llm(raw: Mapping[str, Any]) -> LLMConfig:
         ValueError: If required keys are missing.
     """
     section = get_section(raw, "llm", required=True)
-    api_key_env = expect_str(get_required_value(section, "api_key_env", "llm.api_key_env"), "llm.api_key_env")
+    api_key_env = expect_str(get_optional_value(section, "api_key_env", "LLM_API_KEY"), "llm.api_key_env")
+    yaml_api_key = expect_str(get_optional_value(section, "api_key", ""), "llm.api_key")
+    api_key = yaml_api_key or _load_api_key_from_env(api_key_env)
     return LLMConfig(
         enabled=expect_bool(get_required_value(section, "enabled", "llm.enabled"), "llm.enabled"),
         provider=expect_str(get_required_value(section, "provider", "llm.provider"), "llm.provider"),
         base_url=expect_str(get_optional_value(section, "base_url", ""), "llm.base_url"),
         model=expect_str(get_optional_value(section, "model", ""), "llm.model"),
         api_key_env=api_key_env,
-        api_key=_load_api_key_from_env(api_key_env),
+        api_key=api_key,
         timeout=expect_int(get_required_value(section, "timeout", "llm.timeout"), "llm.timeout"),
         target_lang=expect_str(get_required_value(section, "target_lang", "llm.target_lang"), "llm.target_lang"),
         temperature=expect_float(get_required_value(section, "temperature", "llm.temperature"), "llm.temperature"),
@@ -113,8 +115,9 @@ def check_llm(config: LLMConfig) -> None:
             raise ValueError("llm.model is required when llm.enabled is true")
         if not config.api_key:
             raise ValueError(
-                f"LLM enabled but {config.api_key_env} environment variable not set. "
-                "Set it in your .env file or shell environment."
+                "LLM enabled but api_key is not configured. "
+                "Set llm.api_key in your config YAML or the "
+                f"{config.api_key_env} environment variable."
             )
 
     if config.timeout <= 0:

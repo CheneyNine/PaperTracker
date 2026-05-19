@@ -94,26 +94,24 @@ function renderModelOptions(currentValue) {
   const seen = new Set();
 
   if (!state.llmDiscoveredModels.length) {
-    options.push(`<option value="">请先检测并加载模型</option>`);
-  }
-
-  if (normalizedCurrent) {
-    seen.add(normalizedCurrent);
-    options.push(`
-      <option value="${escapeHtml(normalizedCurrent)}" selected>${escapeHtml(normalizedCurrent)}</option>
-    `);
+    if (normalizedCurrent) {
+      options.push(`<option value="${escapeHtml(normalizedCurrent)}" selected>${escapeHtml(normalizedCurrent)}</option>`);
+    } else {
+      options.push(`<option value="" disabled selected>请先填写 URL 和 Key，然后点击检测</option>`);
+    }
+    return options.join("");
   }
 
   state.llmDiscoveredModels.forEach((value) => {
     const model = String(value || "").trim();
-    if (!model || seen.has(model)) {
-      return;
-    }
+    if (!model || seen.has(model)) return;
     seen.add(model);
-    options.push(`
-      <option value="${escapeHtml(model)}" ${model === normalizedCurrent ? "selected" : ""}>${escapeHtml(model)}</option>
-    `);
+    options.push(`<option value="${escapeHtml(model)}" ${model === normalizedCurrent ? "selected" : ""}>${escapeHtml(model)}</option>`);
   });
+
+  if (normalizedCurrent && !seen.has(normalizedCurrent)) {
+    options.unshift(`<option value="${escapeHtml(normalizedCurrent)}" selected>${escapeHtml(normalizedCurrent)}</option>`);
+  }
 
   return options.join("");
 }
@@ -621,18 +619,19 @@ function renderSettingsView() {
               >
             </label>
             <label class="settings-field">
-              <span>${escapeHtml(llm.api_key_env || "LLM_API_KEY")}${llm.api_key_set ? ' <small style="opacity:0.6">（已配置，留空保持不变）</small>' : ''}</span>
+              <span>API Key</span>
               <input
                 class="sidebar-input"
                 type="text"
                 name="llm_api_key"
-                value=""
-                placeholder="${llm.api_key_set ? '留空保持不变，或输入新 Key' : '例如：sk-...'}"
+                value="${escapeHtml(llm.api_key || "")}"
+                placeholder="例如：sk-..."
+                autocomplete="off"
               >
             </label>
             <label class="settings-field">
               <span>连接检测</span>
-              <button id="llm-discovery-button" type="button" class="sidebar-button settings-inline-button">${state.llmDiscoveryRunning ? "检测中…" : "检测并加载"}</button>
+              <button id="llm-discovery-button" type="button" class="sidebar-button settings-inline-button">${state.llmDiscoveryRunning ? "检测中…" : "检测"}</button>
             </label>
           </div>
           <div class="settings-grid settings-grid-llm-bottom">
@@ -1081,11 +1080,11 @@ async function discoverLlmSettings(payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `HTTP ${response.status}`);
+    throw new Error(data.error || `HTTP ${response.status}`);
   }
-  return response.json();
+  return data;
 }
 
 async function updateArchive(source, sourceId, archived) {
@@ -1562,48 +1561,54 @@ function initSettingsActions() {
     }
     const baseUrlInput = form.querySelector('input[name="llm_base_url"]');
     const apiKeyInput = form.querySelector('input[name="llm_api_key"]');
-    const modelInput = form.querySelector('select[name="llm_model"]');
+    const modelSelect = form.querySelector('select[name="llm_model"]');
     if (!(baseUrlInput instanceof HTMLInputElement) || !(apiKeyInput instanceof HTMLInputElement)) {
       return;
     }
     const baseUrl = baseUrlInput.value.trim();
     const apiKey = apiKeyInput.value.trim();
-    if (!baseUrl || !apiKey) {
-      setLlmDiscoveryFeedback("请先填写 Base URL 和 API Key。", true);
+    if (!baseUrl) {
+      setLlmDiscoveryFeedback("请先填写 Base URL。", true);
+      return;
+    }
+    if (!apiKey) {
+      setLlmDiscoveryFeedback("请先填写 API Key。", true);
       return;
     }
     state.llmDiscoveryRunning = true;
-    state.llmDiscoveredModels = [];
-    renderLlmDiscoveredModels();
     if (target instanceof HTMLButtonElement) {
       target.disabled = true;
       target.textContent = "检测中…";
     }
-    setLlmDiscoveryFeedback("正在检测可用 provider 和 model…");
+    setLlmDiscoveryFeedback("正在连接，请稍候…");
     try {
       const data = await discoverLlmSettings({ base_url: baseUrl, api_key: apiKey });
       const models = Array.isArray(data.models)
         ? data.models.map((item) => String(item || "").trim()).filter(Boolean)
         : [];
       state.llmDiscoveredModels = models;
-      if (modelInput instanceof HTMLSelectElement && models.length) {
-        modelInput.innerHTML = renderModelOptions(models[0]);
-        modelInput.value = models[0];
+      if (modelSelect instanceof HTMLSelectElement) {
+        const currentModel = modelSelect.value;
+        modelSelect.innerHTML = renderModelOptions(currentModel);
+        if (!modelSelect.value && models.length) {
+          modelSelect.value = models[0];
+        }
       }
       setLlmDiscoveryFeedback(
         models.length
-          ? `已检测到 ${models.length} 个模型，并自动填入默认 model。`
-          : "接口已连通，但没有返回可用模型列表。"
+          ? `✓ 检测通过，共找到 ${models.length} 个可用模型。`
+          : "已连通，但接口未返回模型列表，请手动填写模型名。"
       );
     } catch (error) {
-      console.error("Failed to discover LLM settings", error);
+      console.error("LLM discovery failed", error);
       state.llmDiscoveredModels = [];
-      setLlmDiscoveryFeedback("检测失败，请检查 URL、API Key 或服务兼容性。", true);
+      const msg = error instanceof Error ? error.message : String(error);
+      setLlmDiscoveryFeedback(`✗ ${msg}`, true);
     } finally {
       state.llmDiscoveryRunning = false;
       if (target instanceof HTMLButtonElement) {
         target.disabled = false;
-        target.textContent = "检测并加载";
+        target.textContent = "检测";
       }
     }
   });

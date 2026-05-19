@@ -34,8 +34,7 @@ class DashboardSettingsConfig:
                 "base_url": config.llm.base_url,
                 "model": config.llm.model,
                 "api_key_env": config.llm.api_key_env,
-                "api_key": "",
-                "api_key_set": bool(os.getenv(config.llm.api_key_env, "").strip()),
+                "api_key": config.llm.api_key,
                 "target_lang": config.llm.target_lang,
                 "enable_translation": config.llm.enable_translation,
                 "enable_summary": config.llm.enable_summary,
@@ -81,6 +80,8 @@ class DashboardSettingsConfig:
             llm_payload.get("enable_translation", current["llm"]["enable_translation"])
         )
         llm_section["enable_summary"] = bool(llm_payload.get("enable_summary", current["llm"]["enable_summary"]))
+        submitted_api_key = str(llm_payload.get("api_key", "")).strip()
+        llm_section["api_key"] = submitted_api_key or current["llm"]["api_key"]
 
         selected_sources = _normalize_source_names(
             search_payload.get("sources", current["search"]["sources"]),
@@ -95,29 +96,20 @@ class DashboardSettingsConfig:
             search_payload.get("arxiv_min_interval_seconds", current["search"]["arxiv_min_interval_seconds"])
         )
 
-        llm_api_key_env = str(current["llm"]["api_key_env"]).strip()
         ncbi_api_key_env = str(current["search"]["ncbi_api_key_env"]).strip()
-        submitted_llm_key = str(llm_payload.get("api_key", "")).strip()
         submitted_ncbi_key = str(search_payload.get("ncbi_api_key", "")).strip()
-        env_updates = {
-            llm_api_key_env: submitted_llm_key or os.getenv(llm_api_key_env, ""),
-            ncbi_api_key_env: submitted_ncbi_key or os.getenv(ncbi_api_key_env, ""),
-        }
+        ncbi_key_value = submitted_ncbi_key or os.getenv(ncbi_api_key_env, "")
 
         original_yaml_exists = self.config_path.exists()
         original_yaml_text = self.config_path.read_text(encoding="utf-8") if original_yaml_exists else ""
         original_env_exists = self.env_path.exists()
         original_env_text = self.env_path.read_text(encoding="utf-8") if original_env_exists else ""
-        original_env_values = {
-            key: os.getenv(key)
-            for key in env_updates
-        }
+        original_ncbi_env = os.getenv(ncbi_api_key_env)
 
         try:
             self._write_yaml(updated_yaml)
-            self._write_env_updates(env_updates)
-            for key, value in env_updates.items():
-                os.environ[key] = value
+            self._write_env_updates({ncbi_api_key_env: ncbi_key_value})
+            os.environ[ncbi_api_key_env] = ncbi_key_value
             load_config_with_defaults(self.config_path)
         except Exception:
             if original_yaml_exists:
@@ -128,11 +120,10 @@ class DashboardSettingsConfig:
                 self.env_path.write_text(original_env_text, encoding="utf-8")
             elif self.env_path.exists():
                 self.env_path.unlink()
-            for key, value in original_env_values.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
+            if original_ncbi_env is None:
+                os.environ.pop(ncbi_api_key_env, None)
+            else:
+                os.environ[ncbi_api_key_env] = original_ncbi_env
             raise
 
         return self.get_settings()
