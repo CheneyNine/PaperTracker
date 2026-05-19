@@ -621,13 +621,13 @@ function renderSettingsView() {
               >
             </label>
             <label class="settings-field">
-              <span>${escapeHtml(llm.api_key_env || "LLM_API_KEY")}</span>
+              <span>${escapeHtml(llm.api_key_env || "LLM_API_KEY")}${llm.api_key_set ? ' <small style="opacity:0.6">（已配置，留空保持不变）</small>' : ''}</span>
               <input
                 class="sidebar-input"
                 type="password"
                 name="llm_api_key"
-                value="${escapeHtml(llm.api_key || "")}"
-                placeholder="例如：sk-..."
+                value=""
+                placeholder="${llm.api_key_set ? '留空保持不变，或输入新 Key' : '例如：sk-...'}"
               >
             </label>
             <label class="settings-field">
@@ -723,8 +723,8 @@ function renderSettingsView() {
               >
             </label>
             <label class="settings-field">
-              <span>${escapeHtml(search.ncbi_api_key_env || "NCBI_API_KEY")}</span>
-              <input class="sidebar-input" type="password" name="search_ncbi_api_key" value="${escapeHtml(search.ncbi_api_key || "")}">
+              <span>${escapeHtml(search.ncbi_api_key_env || "NCBI_API_KEY")}${search.ncbi_api_key_set ? ' <small style="opacity:0.6">（已配置，留空保持不变）</small>' : ''}</span>
+              <input class="sidebar-input" type="password" name="search_ncbi_api_key" value="" placeholder="${search.ncbi_api_key_set ? '留空保持不变，或输入新 Key' : '可选，提升 PubMed 速率上限'}">
             </label>
           </div>
           <div class="settings-actions settings-actions-inline">

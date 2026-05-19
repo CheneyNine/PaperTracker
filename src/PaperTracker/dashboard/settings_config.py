@@ -34,7 +34,8 @@ class DashboardSettingsConfig:
                 "base_url": config.llm.base_url,
                 "model": config.llm.model,
                 "api_key_env": config.llm.api_key_env,
-                "api_key": os.getenv(config.llm.api_key_env, ""),
+                "api_key": "",
+                "api_key_set": bool(os.getenv(config.llm.api_key_env, "").strip()),
                 "target_lang": config.llm.target_lang,
                 "enable_translation": config.llm.enable_translation,
                 "enable_summary": config.llm.enable_summary,
@@ -46,7 +47,8 @@ class DashboardSettingsConfig:
                 "ccf_ranks": list(config.search.ccf_ranks),
                 "arxiv_min_interval_seconds": config.search.arxiv_min_interval_seconds,
                 "ncbi_api_key_env": config.search.ncbi_api_key_env,
-                "ncbi_api_key": os.getenv(config.search.ncbi_api_key_env, ""),
+                "ncbi_api_key": "",
+                "ncbi_api_key_set": bool(os.getenv(config.search.ncbi_api_key_env, "").strip()),
             },
         }
 
@@ -95,9 +97,11 @@ class DashboardSettingsConfig:
 
         llm_api_key_env = str(current["llm"]["api_key_env"]).strip()
         ncbi_api_key_env = str(current["search"]["ncbi_api_key_env"]).strip()
+        submitted_llm_key = str(llm_payload.get("api_key", "")).strip()
+        submitted_ncbi_key = str(search_payload.get("ncbi_api_key", "")).strip()
         env_updates = {
-            llm_api_key_env: str(llm_payload.get("api_key", current["llm"]["api_key"])).strip(),
-            ncbi_api_key_env: str(search_payload.get("ncbi_api_key", current["search"]["ncbi_api_key"])).strip(),
+            llm_api_key_env: submitted_llm_key or os.getenv(llm_api_key_env, ""),
+            ncbi_api_key_env: submitted_ncbi_key or os.getenv(ncbi_api_key_env, ""),
         }
 
         original_yaml_exists = self.config_path.exists()
