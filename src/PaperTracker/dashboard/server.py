@@ -275,7 +275,11 @@ def _build_handler(
             if not isinstance(theme_id, int):
                 self.send_error(HTTPStatus.BAD_REQUEST, "theme_id is required")
                 return
-            suggestions = suggest_queries_callback(theme_id)
+            try:
+                suggestions = suggest_queries_callback(theme_id)
+            except Exception as error:
+                self._write_json({"error": str(error)}, status=HTTPStatus.BAD_GATEWAY)
+                return
             added: list[str] = []
             existing = {label.casefold() for label in query_config.list_labels()}
             for label in suggestions:

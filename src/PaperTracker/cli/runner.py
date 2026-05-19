@@ -125,7 +125,6 @@ class CommandRunner:
             db_manager, _, _ = create_storage(self.config)
             if db_manager is None:
                 raise click.ClickException("Dashboard storage is unavailable")
-            dashboard_llm_service = create_llm_service(self._load_runtime_config())
             with db_manager:
                 click.echo(
                     f"Dashboard running at http://{self.config.dashboard.host}:{self.config.dashboard.port}"
@@ -147,7 +146,7 @@ class CommandRunner:
                     suggest_queries_callback=lambda theme_id: self._suggest_theme_queries(
                         theme_id=theme_id,
                         dashboard_store=dashboard_store,
-                        llm_service=dashboard_llm_service,
+                        llm_service=create_llm_service(self._load_runtime_config()),
                     ),
                 )
         except KeyboardInterrupt:
