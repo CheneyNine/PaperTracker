@@ -140,11 +140,17 @@ class ArxivApiClient:
         raise last_err
 
     def current_cooldown_seconds(self) -> float:
-        """Return remaining shared arXiv cooldown seconds."""
+        """Return remaining arXiv rate-limit cooldown seconds.
+
+        Subtracts the normal per-request interval so routine request spacing
+        does not suppress subsequent query searches — only extended 429-caused
+        cooldowns (which exceed min_interval_seconds) trigger an early skip.
+        """
         now = time.time()
         shared_next_allowed = self._read_shared_next_allowed_at()
         next_allowed = max(self._next_request_not_before, shared_next_allowed)
-        return max(0.0, next_allowed - now)
+        raw = max(0.0, next_allowed - now)
+        return max(0.0, raw - self._min_interval_seconds)
 
     def _get_with_retry(
         self,
