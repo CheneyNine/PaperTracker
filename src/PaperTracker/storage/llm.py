@@ -66,10 +66,11 @@ class LLMGeneratedStore:
                     abstract_translation,
                     summary_tldr,
                     summary_motivation,
+                    summary_problem,
                     summary_method,
                     summary_result,
                     summary_conclusion
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     paper_content_id,
@@ -79,6 +80,7 @@ class LLMGeneratedStore:
                     info.abstract_translation,
                     info.tldr,
                     info.motivation,
+                    info.problem,
                     info.method,
                     info.result,
                     info.conclusion,
@@ -107,6 +109,7 @@ class LLMGeneratedStore:
                 l.abstract_translation,
                 l.summary_tldr,
                 l.summary_motivation,
+                l.summary_problem,
                 l.summary_method,
                 l.summary_result,
                 l.summary_conclusion
@@ -130,9 +133,10 @@ class LLMGeneratedStore:
             abstract_translation=row[1],
             tldr=row[2],
             motivation=row[3],
-            method=row[4],
-            result=row[5],
-            conclusion=row[6],
+            problem=row[4],
+            method=row[5],
+            result=row[6],
+            conclusion=row[7],
         )
 
     def get_batch_with_llm(
@@ -163,6 +167,7 @@ class LLMGeneratedStore:
                 l.abstract_translation,
                 l.summary_tldr,
                 l.summary_motivation,
+                l.summary_problem,
                 l.summary_method,
                 l.summary_result,
                 l.summary_conclusion
@@ -174,6 +179,7 @@ class LLMGeneratedStore:
                     abstract_translation,
                     summary_tldr,
                     summary_motivation,
+                    summary_problem,
                     summary_method,
                     summary_result,
                     summary_conclusion,
@@ -196,9 +202,10 @@ class LLMGeneratedStore:
                     abstract_translation=row[3],
                     tldr=row[4],
                     motivation=row[5],
-                    method=row[6],
-                    result=row[7],
-                    conclusion=row[8],
+                    problem=row[6],
+                    method=row[7],
+                    result=row[8],
+                    conclusion=row[9],
                 )
 
         return results

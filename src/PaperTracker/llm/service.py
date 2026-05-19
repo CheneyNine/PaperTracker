@@ -7,11 +7,15 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import re
 from typing import Sequence
 
-from PaperTracker.core.models import LLMGeneratedInfo, Paper
+from PaperTracker.core.models import LLMGeneratedInfo, Paper, ThemeContributionInfo
 from PaperTracker.llm.provider import LLMProvider
 from PaperTracker.utils.log import log
+
+_ASCII_LETTER_RE = re.compile(r"[A-Za-z]")
+_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 
 @dataclass(slots=True)
@@ -114,10 +118,11 @@ class LLMService:
                     "language": info.language,
                 }
 
-            if info.tldr or info.motivation or info.method or info.result or info.conclusion:
+            if info.tldr or info.motivation or info.problem or info.method or info.result or info.conclusion:
                 extra_data["summary"] = {
                     "tldr": info.tldr,
                     "motivation": info.motivation,
+                    "problem": info.problem,
                     "method": info.method,
                     "result": info.result,
                     "conclusion": info.conclusion,
@@ -141,6 +146,69 @@ class LLMService:
             )
 
         return enriched
+
+    def generate_theme_contribution_batch(
+        self,
+        papers: Sequence[Paper],
+        *,
+        theme_name: str,
+        theme_description: str,
+    ) -> list[ThemeContributionInfo]:
+        """Generate theme contribution scores for a batch of papers."""
+        if not self.enabled or not papers:
+            return []
+
+        results: list[ThemeContributionInfo] = []
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_paper = {
+                executor.submit(
+                    self._generate_single_theme_contribution,
+                    paper,
+                    theme_name,
+                    theme_description,
+                ): paper
+                for paper in papers
+            }
+            for future in as_completed(future_to_paper):
+                paper = future_to_paper[future]
+                try:
+                    info = future.result()
+                    if info is not None:
+                        results.append(info)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("Theme contribution failed for paper %s: %s", paper.id, e)
+        return results
+
+    def generate_theme_query_suggestions(
+        self,
+        *,
+        theme_name: str,
+        theme_description: str,
+    ) -> list[str]:
+        """Generate search query suggestions for one research theme."""
+        if not self.enabled:
+            return []
+        suggestions = self.provider.suggest_theme_queries(
+            theme_name=theme_name,
+            theme_description=theme_description,
+            target_lang=self.target_lang,
+        )
+        results: list[str] = []
+        seen: set[str] = set()
+        for item in suggestions:
+            normalized = " ".join(str(item).split())
+            if not normalized:
+                continue
+            if _CJK_RE.search(normalized):
+                continue
+            if not _ASCII_LETTER_RE.search(normalized):
+                continue
+            key = normalized.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(normalized)
+        return results
 
     def _generate_single(self, paper: Paper) -> LLMGeneratedInfo | None:
         """Generate LLM enrichment for a single paper.
@@ -196,7 +264,32 @@ class LLMService:
             abstract_translation=translation,
             tldr=summary_dict.get("tldr") if summary_dict else None,
             motivation=summary_dict.get("motivation") if summary_dict else None,
+            problem=summary_dict.get("problem") if summary_dict else None,
             method=summary_dict.get("method") if summary_dict else None,
             result=summary_dict.get("result") if summary_dict else None,
             conclusion=summary_dict.get("conclusion") if summary_dict else None,
+        )
+
+    def _generate_single_theme_contribution(
+        self,
+        paper: Paper,
+        theme_name: str,
+        theme_description: str,
+    ) -> ThemeContributionInfo | None:
+        """Generate contribution score of one paper to one research theme."""
+        if not paper.title and not paper.abstract:
+            return None
+
+        payload = self.provider.evaluate_theme_contribution(
+            title=paper.title,
+            abstract=paper.abstract,
+            theme_name=theme_name,
+            theme_description=theme_description,
+            target_lang=self.target_lang,
+        )
+        return ThemeContributionInfo(
+            source=paper.source,
+            source_id=paper.id,
+            contribution_score=int(payload.get("contribution_score", 0)),
+            rationale=str(payload.get("rationale", "") or "").strip() or None,
         )

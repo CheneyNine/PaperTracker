@@ -27,4 +27,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-PaperTracker = ["config/defaults.yml"]
+PaperTracker = ["config/defaults.yml", "dashboard/assets/*"]

@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 from PaperTracker.config.common import (
     expect_bool,
+    expect_float,
     expect_int,
     expect_str,
     expect_str_list,
@@ -37,8 +38,15 @@ class SearchConfig:
     max_lookback_days: int
     max_fetch_items: int
     fetch_batch_size: int
+    arxiv_min_interval_seconds: float
     sources: tuple[str, ...]
     openalex_relevance_threshold: float
+    ccf_enabled: bool
+    ccf_cache_path: str
+    ccf_ranks: tuple[str, ...]
+    dblp_recent_years: int
+    openreview_recent_years: int
+    openreview_max_pages: int
     ncbi_api_key_env: str
     ncbi_api_key: str
     ncbi_tool: str
@@ -73,6 +81,7 @@ def load_search(raw: Mapping[str, Any]) -> SearchConfig:
     openalex_relevance_threshold = _load_openalex_relevance_threshold(
         section.get("openalex_relevance_threshold")
     )
+    ccf_ranks = _parse_ccf_ranks(section.get("ccf_ranks", ["A", "B"]))
     ncbi_api_key_env = expect_str(section.get("ncbi_api_key_env", "NCBI_API_KEY"), "search.ncbi_api_key_env")
     ncbi_api_key = os.getenv(ncbi_api_key_env, "").strip()
     ncbi_tool = expect_str(section.get("ncbi_tool", "paper-tracker"), "search.ncbi_tool")
@@ -98,8 +107,21 @@ def load_search(raw: Mapping[str, Any]) -> SearchConfig:
             get_required_value(section, "fetch_batch_size", "search.fetch_batch_size"),
             "search.fetch_batch_size",
         ),
+        arxiv_min_interval_seconds=expect_float(
+            section.get("arxiv_min_interval_seconds", 5.0),
+            "search.arxiv_min_interval_seconds",
+        ),
         sources=sources,
         openalex_relevance_threshold=openalex_relevance_threshold,
+        ccf_enabled=expect_bool(section.get("ccf_enabled", False), "search.ccf_enabled"),
+        ccf_cache_path=expect_str(section.get("ccf_cache_path", "database/ccf_venues_ab.json"), "search.ccf_cache_path"),
+        ccf_ranks=ccf_ranks,
+        dblp_recent_years=expect_int(section.get("dblp_recent_years", 2), "search.dblp_recent_years"),
+        openreview_recent_years=expect_int(
+            section.get("openreview_recent_years", 2),
+            "search.openreview_recent_years",
+        ),
+        openreview_max_pages=expect_int(section.get("openreview_max_pages", 3), "search.openreview_max_pages"),
         ncbi_api_key_env=ncbi_api_key_env,
         ncbi_api_key=ncbi_api_key,
         ncbi_tool=ncbi_tool,
@@ -132,10 +154,22 @@ def check_search(config: SearchConfig) -> None:
         raise ValueError("search.max_fetch_items must be -1 or positive")
     if config.fetch_batch_size <= 0:
         raise ValueError("search.fetch_batch_size must be positive")
+    if config.arxiv_min_interval_seconds <= 0:
+        raise ValueError("search.arxiv_min_interval_seconds must be positive")
     if not config.sources:
         raise ValueError("search.sources must include at least one source")
     if config.openalex_relevance_threshold < 0:
         raise ValueError("search.openalex_relevance_threshold must be >= 0")
+    if not config.ccf_cache_path.strip():
+        raise ValueError("search.ccf_cache_path must not be empty")
+    if not config.ccf_ranks:
+        raise ValueError("search.ccf_ranks must include at least one rank")
+    if config.dblp_recent_years <= 0:
+        raise ValueError("search.dblp_recent_years must be positive")
+    if config.openreview_recent_years <= 0:
+        raise ValueError("search.openreview_recent_years must be positive")
+    if config.openreview_max_pages <= 0:
+        raise ValueError("search.openreview_max_pages must be positive")
 
 
 def _parse_sources(value: Any) -> tuple[str, ...]:
@@ -183,6 +217,24 @@ def _load_openalex_relevance_threshold(value: Any) -> float:
     return float(value)
 
 
+def _parse_ccf_ranks(value: Any) -> tuple[str, ...]:
+    """Parse normalized CCF ranks."""
+    items = expect_str_list(value, "search.ccf_ranks")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(items):
+        rank = expect_str(item, f"search.ccf_ranks[{idx}]").strip().upper()
+        if rank not in {"A", "B", "C"}:
+            raise ValueError(f"search.ccf_ranks has unknown rank: {rank}")
+        if rank in seen:
+            continue
+        seen.add(rank)
+        normalized.append(rank)
+    if not normalized:
+        raise ValueError("search.ccf_ranks must include at least one rank")
+    return tuple(normalized)
+
+
 def parse_search_query(value: Any, config_key: str) -> SearchQuery:
     """Parse a query mapping into ``SearchQuery``.
 
@@ -202,7 +254,8 @@ def parse_search_query(value: Any, config_key: str) -> SearchQuery:
 
     name = None
     if "NAME" in value:
-        name = expect_str(value["NAME"], f"{config_key}.NAME").strip() or None
+        raw_name = expect_str(value["NAME"], f"{config_key}.NAME").strip()
+        name = raw_name.replace("_", " ") or None
 
     fields: dict[str, FieldQuery] = {}
     if any(k in value for k in _ALLOWED_OPS):

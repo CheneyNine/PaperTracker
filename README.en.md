@@ -1,77 +1,106 @@
 # Paper Tracker
 
-> The following content was translated using a large language model (LLM)
-
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/rainerseventeen/paper-tracker/releases)
-[![Last Commit](https://img.shields.io/github/last-commit/rainerseventeen/paper-tracker)](https://github.com/rainerseventeen/paper-tracker/commits)
-[![Code Size](https://img.shields.io/github/languages/code-size/rainerseventeen/paper-tracker)](https://github.com/rainerseventeen/paper-tracker)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/rainerseventeen/paper-tracker/graphs/commit-activity)
+[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/CheneyNine/PaperTracker/releases)
+[![Last Commit](https://img.shields.io/github/last-commit/CheneyNine/PaperTracker)](https://github.com/CheneyNine/PaperTracker/commits)
+[![Code Size](https://img.shields.io/github/languages/code-size/CheneyNine/PaperTracker)](https://github.com/CheneyNine/PaperTracker)
 
 **English | [中文](./README.md)**
 
-Paper Tracker is a minimal paper tracking tool. Its core goal is to query multiple paper data sources by keywords (`arXiv`, `OpenAlex`, `PubMed`) and output structured results based on configuration, so you can continuously track new papers.
+Paper Tracker is a minimal paper tracking tool that queries multiple databases — arXiv, OpenAlex, PubMed, DBLP, and OpenReview — filters results by CCF venue ranking, optionally enriches them with LLM summaries, and outputs structured results so you can continuously track the latest research in your field.
 
 **If this project helps you, please consider giving it a Star ⭐. Thank you!**
 
 ## Demo
 
-See the live result: [📄 Deployment Page](https://rainerseventeen.github.io/paper-tracker/)
-
 ![HTML Output Preview](./docs/assets/html_output_preview.png)
 
-## Implemented Features
+## Features
 
-- 🔍 **Query and Filtering**:
-  - Multi-source retrieval: `arxiv` (preprints), `openalex` (journals/conferences/preprints), `pubmed` (biomedical journals), can be enabled together
-  - Field-based search: `TITLE`, `ABSTRACT`, `AUTHOR`, `JOURNAL`, `CATEGORY`
-  - Logical operators: `AND`, `OR`, `NOT`
-  - Global `scope` support (applies to all queries)
-  - Cross-source deduplication after multi-source aggregation
+### Sources
 
-  | Source | Data Type | Query Field Support | Local Post-Filter | Cross-Source Dedupe |
-  |--------|-----------|:-------------------:|:-----------------:|:-------------------:|
-  | `arxiv` | Preprints | Full | — | ✅ |
-  | `openalex` | Journals / Conferences / Preprints | Partial | ✅ | ✅ |
-  | `pubmed` | Biomedical journals | Partial | — | ✅ |
+Five sources supported, all can be enabled simultaneously:
 
-  > **Note**: The `openalex` source is currently unstable and may return papers unrelated to the queried topic. This feature is still under active development. If you find a significant number of irrelevant articles in the results, it is recommended to disable the `openalex` source in your configuration.
-  >
-  > **PubMed usage tip**: PubMed is biased toward biomedicine / life sciences. If your topic is unrelated, enabling PubMed is likely to return few or no results. Setting the `NCBI_API_KEY` environment variable is recommended to raise the rate limit.
+| Source | Data Type | Query Field Support | Local Post-Filter | CCF Filter | Cross-Source Dedupe |
+|--------|-----------|:-------------------:|:-----------------:|:----------:|:-------------------:|
+| `arxiv` | Preprints | Full | — | — | ✅ |
+| `openalex` | Journals / Conferences / Preprints | Partial | ✅ | — | ✅ |
+| `pubmed` | Biomedical journals | Partial | — | — | ✅ |
+| `dblp` | CCF venue proceedings | Local keyword match | ✅ | ✅ | ✅ |
+| `openreview` | CCF conference submissions | Local keyword match | ✅ | ✅ | ✅ |
 
-- 🧲 **Fetch Strategy**: Supports fetching older papers to fill the target paper count
+> **openalex note**: Result quality is still improving — it may occasionally return off-topic papers. Disable if results are consistently noisy.
+>
+> **PubMed tip**: Biased toward biomedicine / life sciences. Setting `NCBI_API_KEY` is recommended to raise the rate limit.
+>
+> **dblp / openreview**: Requires `ccf_enabled: true`. Only papers from CCF A/B venues are fetched, then filtered by your keywords.
 
-- 🗃️ **Deduplication and Storage**: SQLite-based deduplication and paper content storage for later lookup
+### Query and Filtering
 
-- 📤 **Output Capabilities**: Supports `json`, `markdown`, `html` output formats, and template replacement
+- Field-based search: `TITLE`, `ABSTRACT`, `AUTHOR`, `JOURNAL`, `CATEGORY`
+- Logical operators: `AND`, `OR`, `NOT`
+- Global `scope` applied across all queries
+- **CCF rank whitelist**: when `ccf_enabled: true`, DBLP/OpenReview only collects papers from venues at the specified ranks (default: A and B)
 
-- 🤖 **LLM Enhancement**: Supports OpenAI-compatible API calls, including abstract translation and structured summaries
+### Fetch Strategy
 
-- 🌐 **Configurable Output Language**: Customize translation and summary output language with `llm.target_lang` (e.g. `Simplified Chinese`, `English`, `Japanese`)
+- Strict time window + backfill: fetches papers within `pull_every` days first, then looks further back (up to `max_lookback_days`) to reach the target count
+- Cross-source deduplication after aggregation (DOI / arXiv ID / title similarity)
+
+### Storage
+
+- SQLite-backed deduplication — no repeated papers across runs
+- Full paper content (title, abstract, authors, etc.) optionally persisted
+
+### Output
+
+- Formats: `console`, `json`, `markdown`, `html`
+- HTML supports custom templates
+
+### LLM Enhancement
+
+- OpenAI-compatible API (OpenAI, DeepSeek, SiliconFlow, etc.)
+- Abstract translation + structured summary (TLDR / motivation / method / conclusion)
+- Output language configurable via `llm.target_lang` (e.g. `Simplified Chinese`, `English`, `Japanese`)
+
+### Local Dashboard
+
+Run `paper-tracker dashboard` to start a local web UI (default: `http://127.0.0.1:8765`) with:
+
+- Browse and search stored papers
+- Trigger manual refresh
+- Configure LLM provider and query parameters in-browser
 
 ## Quick Start
 
-Using a virtual environment is recommended (e.g. `.venv/`):
+A virtual environment is recommended:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate      # macOS / Linux
 # .venv\Scripts\activate       # Windows
-python -m pip install -e .     # Install
+pip install -e .
 ```
 
-Run directly with the built-in example config:
+Run with the built-in example config:
+
 ```bash
 paper-tracker search --config config/example.yml
 ```
 
-## Custom Configuration
+Start the local Dashboard:
 
-Copy the example config, edit it as needed, then run:
+```bash
+paper-tracker dashboard --config config/example.yml
+# Open http://127.0.0.1:8765 in your browser
+```
+
+## Custom Configuration
 
 ```bash
 cp config/example.yml config/custom.yml
-# Edit fields in config/custom.yml
+# Edit config/custom.yml as needed
 paper-tracker search --config config/custom.yml
 ```
 
@@ -80,9 +109,18 @@ paper-tracker search --config config/custom.yml
 - `queries`: at least one query must be configured
 - `llm.base_url` / `llm.model`: required when `llm.enabled: true`
 
-### (Optional) Configure LLM Environment Variables
+### Enable CCF Filtering (DBLP / OpenReview)
 
-If LLM summary translation is enabled, configure your API key:
+```yaml
+search:
+  sources: [arxiv, dblp, openreview]
+  ccf_enabled: true
+  ccf_ranks: [A, B]          # only collect CCF A/B venues
+  dblp_recent_years: 2       # fetch proceedings from the last N years
+  openreview_recent_years: 2
+```
+
+### Configure LLM API Key (optional)
 
 ```bash
 cp .env.example .env
@@ -90,8 +128,9 @@ cp .env.example .env
 ```
 
 📚 Detailed docs:
+
 - [📖 User Guide](./docs/en/guide_user.md)
-- [⚙️ Detailed Configuration Reference](./docs/en/guide_configuration.md)
+- [⚙️ Configuration Reference](./docs/en/guide_configuration.md)
 - [🔍 Search Logic Overview](./docs/en/architecture_search_logic.md)
 - [🔍 arXiv Query Syntax](./docs/en/source_arxiv_api_query.md)
 - [🔍 OpenAlex Query Parameters](./docs/en/source_openalex_api_query.md)
@@ -99,19 +138,14 @@ cp .env.example .env
 
 ## Update
 
-To update to the latest version:
-
 ```bash
-cd paper-tracker
 git pull
-python -m pip install -e . --upgrade
+pip install -e . --upgrade
 ```
 
 ## Feedback
 
-If you encounter issues or have feature suggestions, please open an issue at [GitHub Issues](https://github.com/rainerseventeen/paper-tracker/issues).
-
-Please include runtime logs (default location: `log/`).
+For bugs or feature requests, open an issue at [GitHub Issues](https://github.com/CheneyNine/PaperTracker/issues). Please include the runtime log (default location: `log/`).
 
 ## License
 
@@ -119,7 +153,7 @@ This project is licensed under the [MIT License](./LICENSE).
 
 ## Acknowledgments
 
-This repository is an independent implementation, inspired by the functional ideas of the following projects:
+This project was inspired by the following open-source works:
 
 - [Arxiv-tracker](https://github.com/colorfulandcjy0806/Arxiv-tracker)
 - [daily-arXiv-ai-enhanced](https://github.com/dw-dengwei/daily-arXiv-ai-enhanced)

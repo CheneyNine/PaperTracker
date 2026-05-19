@@ -15,6 +15,12 @@ log:
   to_file: true
   dir: log
 
+# dashboard domain
+dashboard:
+  host: 127.0.0.1
+  port: 8765
+  auto_refresh_seconds: 30
+
 # storage domain
 storage:
   enabled: true
@@ -33,6 +39,12 @@ storage:
 search:
   sources: [arxiv]           # enabled search sources
   max_results: 5              # max paper count for each query
+  ccf_enabled: false          # enable local CCF A/B whitelist helpers for supported sources
+  ccf_cache_path: database/ccf_venues_ab.json
+  ccf_ranks: [A, B]
+  dblp_recent_years: 2
+  openreview_recent_years: 2
+  openreview_max_pages: 3
 
   # multi round fetch
   pull_every: 7               # Strict time window, unit: day
@@ -40,6 +52,7 @@ search:
   max_lookback_days: 30       # Max length for fill window, -1 as infinite
   max_fetch_items: 125        # Max number of items to fetch, -1 means unlimited
   fetch_batch_size: 25        # Fetch count for each round
+  arxiv_min_interval_seconds: 5.0                   # Minimum spacing between arXiv requests across pages/retries
   openalex_relevance_threshold: 0.0                    # local threshold for OpenAlex relevance_score
   ncbi_api_key_env: NCBI_API_KEY   # env var name for NCBI API key (optional, improves rate limit)
   ncbi_tool: paper-tracker         # tool identifier sent to NCBI E-utilities

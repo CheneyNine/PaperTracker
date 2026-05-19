@@ -16,6 +16,11 @@ from PaperTracker.config import parse_config_dict
 def _base_raw_config() -> dict:
     return {
         "log": {"level": "INFO", "to_file": True, "dir": "log"},
+        "dashboard": {
+            "host": "127.0.0.1",
+            "port": 8765,
+            "auto_refresh_seconds": 30,
+        },
         "queries": [{"NAME": "q1", "OR": ["test"]}],
         "search": {
             "max_results": 5,
@@ -24,7 +29,14 @@ def _base_raw_config() -> dict:
             "max_lookback_days": 30,
             "max_fetch_items": 125,
             "fetch_batch_size": 25,
+            "arxiv_min_interval_seconds": 5.0,
             "openalex_relevance_threshold": 0.0,
+            "ccf_enabled": False,
+            "ccf_cache_path": "database/ccf_venues_ab.json",
+            "ccf_ranks": ["A", "B"],
+            "dblp_recent_years": 2,
+            "openreview_recent_years": 2,
+            "openreview_max_pages": 3,
         },
         "output": {
             "base_dir": "output",
@@ -72,11 +84,14 @@ class TestConfigLayering(unittest.TestCase):
     def test_parse_success_nested_access(self) -> None:
         cfg = parse_config_dict(_base_raw_config())
         self.assertEqual(cfg.runtime.level, "INFO")
+        self.assertEqual(cfg.dashboard.host, "127.0.0.1")
+        self.assertEqual(cfg.dashboard.port, 8765)
         self.assertEqual(cfg.search.max_results, 5)
         self.assertEqual(cfg.storage.db_path, "database/papers.db")
         self.assertEqual(cfg.search.queries[0].name, "q1")
         self.assertEqual(cfg.search.sources, ("arxiv",))
         self.assertEqual(cfg.search.openalex_relevance_threshold, 0.0)
+        self.assertEqual(cfg.search.arxiv_min_interval_seconds, 5.0)
 
     def test_output_unknown_format_error_contains_key(self) -> None:
         raw = _base_raw_config()
@@ -145,6 +160,12 @@ class TestConfigLayering(unittest.TestCase):
         assert cfg.search.scope is not None
         self.assertIn("CATEGORY", cfg.search.scope.fields)
 
+    def test_query_name_underscores_are_normalized_for_display(self) -> None:
+        raw = deepcopy(_base_raw_config())
+        raw["queries"] = [{"NAME": "urban_mobility_qa_benchmark", "OR": ["test"]}]
+        cfg = parse_config_dict(raw)
+        self.assertEqual(cfg.search.queries[0].name, "urban mobility qa benchmark")
+
     def test_search_sources_normalization(self) -> None:
         raw = deepcopy(_base_raw_config())
         raw["search"]["sources"] = ["ArXiv", "arxiv"]
@@ -156,6 +177,12 @@ class TestConfigLayering(unittest.TestCase):
         raw["search"]["sources"] = ["OpenAlex", "arxiv", "openalex"]
         cfg = parse_config_dict(raw)
         self.assertEqual(cfg.search.sources, ("openalex", "arxiv"))
+
+    def test_search_sources_support_dblp_and_openreview(self) -> None:
+        raw = deepcopy(_base_raw_config())
+        raw["search"]["sources"] = ["DBLP", "openreview", "dblp"]
+        cfg = parse_config_dict(raw)
+        self.assertEqual(cfg.search.sources, ("dblp", "openreview"))
 
     def test_search_sources_unknown_value(self) -> None:
         raw = deepcopy(_base_raw_config())
@@ -179,6 +206,18 @@ class TestConfigLayering(unittest.TestCase):
         raw = deepcopy(_base_raw_config())
         raw["search"]["openalex_relevance_threshold"] = -0.1
         with self.assertRaisesRegex(ValueError, "search\\.openalex_relevance_threshold"):
+            parse_config_dict(raw)
+
+    def test_search_arxiv_min_interval_seconds_must_be_positive(self) -> None:
+        raw = deepcopy(_base_raw_config())
+        raw["search"]["arxiv_min_interval_seconds"] = 0
+        with self.assertRaisesRegex(ValueError, "search\\.arxiv_min_interval_seconds"):
+            parse_config_dict(raw)
+
+    def test_dashboard_port_must_be_valid(self) -> None:
+        raw = deepcopy(_base_raw_config())
+        raw["dashboard"]["port"] = 70000
+        with self.assertRaisesRegex(ValueError, "dashboard\\.port"):
             parse_config_dict(raw)
 
 

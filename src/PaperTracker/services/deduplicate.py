@@ -204,6 +204,7 @@ def _work_type_tier(paper: Paper) -> int:
 
 def _merge_missing_fields(winner: Paper, loser: Paper) -> Paper:
     """Backfill winner's missing fields from loser without overriding winner values."""
+    merged_abstract = winner.abstract or loser.abstract
     merged_doi = winner.doi or loser.doi
     merged_authors = winner.authors or loser.authors
     merged_primary_category = winner.primary_category or loser.primary_category
@@ -216,11 +217,15 @@ def _merge_missing_fields(winner: Paper, loser: Paper) -> Paper:
         merged_links = replace(merged_links, pdf=loser.links.pdf)
 
     merged_extra = dict(winner.extra)
+    for key, value in loser.extra.items():
+        if key not in merged_extra and value is not None:
+            merged_extra[key] = value
     if "work_type" not in merged_extra and "work_type" in loser.extra:
         merged_extra["work_type"] = loser.extra["work_type"]
 
     return replace(
         winner,
+        abstract=merged_abstract,
         doi=merged_doi,
         authors=merged_authors,
         primary_category=merged_primary_category,

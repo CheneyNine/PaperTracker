@@ -52,5 +52,22 @@ def search_cmd(ctx: click.Context, config_path: Path) -> None:
         click.Abort: When the search fails.
     """
     cfg = load_config_with_defaults(config_path)
-    runner = CommandRunner(cfg)
+    runner = CommandRunner(cfg, config_path=config_path)
     runner.run_search(action=ctx.command.name)
+
+
+@cli.command("dashboard")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=Path("config/example.yml"),
+    show_default=True,
+    help="Path to YAML config file (overrides defaults).",
+)
+@click.pass_context
+def dashboard_cmd(ctx: click.Context, config_path: Path) -> None:
+    """Start the local dynamic dashboard server."""
+    cfg = load_config_with_defaults(config_path)
+    runner = CommandRunner(cfg, config_path=config_path)
+    runner.run_dashboard(action=ctx.command.name)

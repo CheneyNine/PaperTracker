@@ -73,9 +73,25 @@ class TestFreshDatabase(unittest.TestCase):
     def test_main_tables_created(self):
         run_migrations(self._conn)
         tables = _table_names(self._conn)
-        for name in ("seen_papers", "paper_content", "llm_generated", "schema_version"):
+        for name in ("seen_papers", "paper_content", "llm_generated", "schema_version", "theme_queries"):
             with self.subTest(table=name):
                 self.assertIn(name, tables)
+
+    def test_seen_papers_has_archived_at_column(self):
+        run_migrations(self._conn)
+        columns = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(seen_papers)").fetchall()
+        }
+        self.assertIn("archived_at", columns)
+
+    def test_llm_generated_has_summary_problem_column(self):
+        run_migrations(self._conn)
+        columns = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(llm_generated)").fetchall()
+        }
+        self.assertIn("summary_problem", columns)
 
 
 # ---------------------------------------------------------------------------

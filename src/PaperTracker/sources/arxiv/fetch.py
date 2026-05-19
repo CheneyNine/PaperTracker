@@ -7,7 +7,6 @@ while preserving deterministic sorting and optional persistent deduplication.
 from __future__ import annotations
 
 import logging
-import time as time_module
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from time import time
@@ -24,8 +23,6 @@ logger = logging.getLogger(__name__)
 ARXIV_SORT_BY = "lastUpdatedDate"
 ARXIV_SORT_ORDER = "descending"
 TIMEOUT_SECONDS = 120
-# arXiv API rate limit: wait 3 seconds between consecutive requests
-REQUEST_INTERVAL = 3.0
 
 
 def collect_papers_with_time_filter(
@@ -82,6 +79,13 @@ def collect_papers_with_time_filter(
             )
             break
 
+        page_num = page_offset // policy.fetch_batch_size + 1
+        logger.info(
+            "Fetching arXiv page %d: offset=%d page_size=%d",
+            page_num,
+            page_offset,
+            policy.fetch_batch_size,
+        )
         page = fetch_page_func(
             search_query_str,
             page_offset,
@@ -94,7 +98,6 @@ def collect_papers_with_time_filter(
             break
 
         fetched_items += len(page)
-        page_num = page_offset // policy.fetch_batch_size + 1
         logger.info("Fetched page %d: %d items (total %d)", page_num, len(page), fetched_items)
         page_offset += policy.fetch_batch_size
 
@@ -161,10 +164,6 @@ def collect_papers_with_time_filter(
         if policy.max_fetch_items != -1 and fetched_items >= policy.max_fetch_items:
             logger.info("Reached max_fetch_items=%d; stop", policy.max_fetch_items)
             break
-
-        # Rate limiting: sleep before next request (arXiv recommends 3s interval)
-        logger.debug("Sleeping %.1fs to respect arXiv rate limit", REQUEST_INTERVAL)
-        time_module.sleep(REQUEST_INTERVAL)
 
     new_items.sort(
         key=lambda paper: (

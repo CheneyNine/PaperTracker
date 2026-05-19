@@ -34,6 +34,7 @@ def parse_openalex_works(items: Sequence[Mapping[str, Any]]) -> list[Paper]:
         categories = _extract_categories(item)
         primary_category = categories[0] if categories else None
         abstract_url, pdf_url = _extract_links(item)
+        venue_name, venue_type = _extract_venue(item)
 
         papers.append(
             Paper(
@@ -52,6 +53,8 @@ def parse_openalex_works(items: Sequence[Mapping[str, Any]]) -> list[Paper]:
                     "work_type": _extract_work_type(item),
                     "language": language or None,
                     "relevance_score": relevance_score,
+                    "venue_name": venue_name or None,
+                    "venue_type": venue_type or None,
                 },
             )
         )
@@ -215,6 +218,33 @@ def _extract_relevance_score(item: Mapping[str, Any]) -> float | None:
     if isinstance(score, (int, float)):
         return float(score)
     return None
+
+
+def _extract_venue(item: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """Extract venue display name and coarse type from OpenAlex payload."""
+    candidate_mappings = [
+        item.get("primary_location"),
+        item.get("best_oa_location"),
+        item.get("host_venue"),
+    ]
+    for candidate in candidate_mappings:
+        if not isinstance(candidate, Mapping):
+            continue
+        source = candidate.get("source")
+        if isinstance(source, Mapping):
+            display_name = _safe_str(source.get("display_name"))
+            source_type = _safe_str(source.get("type")).lower()
+            if display_name:
+                return display_name, source_type or None
+        display_name = _safe_str(candidate.get("display_name"))
+        source_type = _safe_str(candidate.get("type")).lower()
+        if display_name:
+            return display_name, source_type or None
+
+    fallback_name = _safe_str(item.get("host_venue_display_name"))
+    if fallback_name:
+        return fallback_name, None
+    return None, None
 
 
 def _rebuild_abstract(raw_index: Any) -> str:

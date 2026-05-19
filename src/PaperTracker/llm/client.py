@@ -49,6 +49,22 @@ def normalize_endpoint(base_url: str) -> str:
     return url + "/v1/chat/completions"
 
 
+def normalize_models_endpoint(base_url: str) -> str:
+    """Normalize base URL to full models listing endpoint."""
+    if not base_url:
+        raise ValueError("base_url cannot be empty")
+
+    url = base_url.rstrip("/")
+
+    if url.endswith("/chat/completions"):
+        return url[: -len("/chat/completions")] + "/models"
+    if url.endswith("/v1/models"):
+        return url
+    if url.endswith("/v1"):
+        return url + "/models"
+    return url + "/v1/models"
+
+
 def extract_json(text: str) -> dict[str, Any]:
     """Extract first JSON object from text (loose parsing).
 
@@ -162,6 +178,31 @@ class LLMApiClient:
             json=payload,
             headers=headers,
         )
+
+    def list_models(self) -> list[str]:
+        """List available model ids from an OpenAI-compatible endpoint."""
+        endpoint = normalize_models_endpoint(self.endpoint)
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        response = requests.get(endpoint, headers=headers, timeout=self.timeout)
+        response.raise_for_status()
+        data = response.json()
+        items = data.get("data", [])
+        if not isinstance(items, list):
+            return []
+        models: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            model_id = str(item.get("id", "") or "").strip()
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            models.append(model_id)
+        return models
 
     def _post_with_retry(
         self,

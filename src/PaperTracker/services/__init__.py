@@ -6,6 +6,7 @@ functions for component creation.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from PaperTracker.services.search import PaperSearchService, PaperSource
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
 def create_search_service(
     config: AppConfig,
     dedup_store: SqliteDeduplicateStore | None = None,
+    progress_callback: Callable[[str, dict[str, object]], None] | None = None,
 ) -> PaperSearchService:
     """Create a search service with configured data sources.
 
@@ -34,7 +36,10 @@ def create_search_service(
         for source_name in config.search.sources
     ]
 
-    return PaperSearchService(sources=tuple(sources))
+    return PaperSearchService(
+        sources=tuple(sources),
+        progress_callback=progress_callback,
+    )
 
 
 __all__ = [

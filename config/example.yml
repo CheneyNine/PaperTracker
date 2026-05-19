@@ -20,6 +20,7 @@ search:
   pull_every: 7               # Strict time window filter[now - <pull_every>, now], unit: day
   fill_enabled: true          # Allow fill with paper outside the strict time window
   max_lookback_days: 30       # Max length for fill window, -1 as infinite
+  arxiv_min_interval_seconds: 5.0   # Minimum spacing between arXiv requests; raise this if you still hit 429
 
 queries:
   - NAME: Deep Learning

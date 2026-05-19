@@ -2,119 +2,150 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/rainerseventeen/paper-tracker/releases)
-[![Last Commit](https://img.shields.io/github/last-commit/rainerseventeen/paper-tracker)](https://github.com/rainerseventeen/paper-tracker/commits)
-[![Code Size](https://img.shields.io/github/languages/code-size/rainerseventeen/paper-tracker)](https://github.com/rainerseventeen/paper-tracker)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/rainerseventeen/paper-tracker/graphs/commit-activity)
+[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/CheneyNine/PaperTracker/releases)
+[![Last Commit](https://img.shields.io/github/last-commit/CheneyNine/PaperTracker)](https://github.com/CheneyNine/PaperTracker/commits)
+[![Code Size](https://img.shields.io/github/languages/code-size/CheneyNine/PaperTracker)](https://github.com/CheneyNine/PaperTracker)
 
 **[English](./README.en.md) | 中文**
 
-Paper Tracker 是一个最小化的论文追踪工具，核心目标是基于关键词查询多个论文数据库（arXiv、OpenAlex、PubMed），并按配置输出结构化结果，便于持续跟踪新论文。
+Paper Tracker 是一个最小化的论文追踪工具，支持从 arXiv、OpenAlex、PubMed、DBLP、OpenReview 多个来源检索论文，结合 CCF 等级过滤和 LLM 摘要增强，按配置输出结构化结果，便于持续追踪领域最新进展。
 
-**如果该项目对你有帮助, 请麻烦点一个 Star ⭐, 谢谢!**
+**如果该项目对你有帮助，请麻烦点一个 Star ⭐，谢谢！**
 
 ## 效果展示
 
-查看实际运行效果：[📄 部署发布页](https://rainerseventeen.github.io/paper-tracker/)
-
 ![HTML 输出结果演示](./docs/assets/html_output_preview.png)
 
-## 已实现功能
+## 功能概览
 
-- 🔍 **查询与筛选**:
-  - 支持多数据源：`arxiv`（预印本）、`openalex`（期刊/会议/预印本）、`pubmed`（生物医学期刊），可同时启用
-  - 支持字段化检索：`TITLE`、`ABSTRACT`、`AUTHOR`、`JOURNAL`、`CATEGORY`
-  - 支持逻辑操作：`AND`、`OR`、`NOT`
-  - 支持全局 `scope`（对所有 queries 生效）
-  - 多源结果聚合后执行跨源去重
+### 数据源
 
+支持 5 个数据源，可在配置中同时启用：
 
-  | 数据源 | 数据类型 | query 字段支持 | 本地精筛 | 跨源去重 |
-  |--------|----------|:--------------:|:--------:|:--------:|
-  | `arxiv` | 预印本 | 完整 | — | ✅ |
-  | `openalex` | 期刊 / 会议 / 预印本 | 部分 | ✅ | ✅ |
-  | `pubmed` | 生物医学期刊 | 部分 | — | ✅ |
+| 数据源 | 数据类型 | query 字段支持 | 本地精筛 | CCF 过滤 | 跨源去重 |
+|--------|----------|:--------------:|:--------:|:--------:|:--------:|
+| `arxiv` | 预印本 | 完整 | — | — | ✅ |
+| `openalex` | 期刊 / 会议 / 预印本 | 部分 | ✅ | — | ✅ |
+| `pubmed` | 生物医学期刊 | 部分 | — | — | ✅ |
+| `dblp` | CCF 会议论文集 | 本地关键词匹配 | ✅ | ✅ | ✅ |
+| `openreview` | CCF 会议投稿 | 本地关键词匹配 | ✅ | ✅ | ✅ |
 
-  > **注意**：`openalex` 来源数据目前尚不稳定，可能返回与查询主题不相关的论文，该功能仍处于开发阶段。如果发现结果中出现大量无关文章，建议在配置中关闭 `openalex` 来源。
-  >
-  > **PubMed 使用提示**：PubMed 偏向生物医学/生命科学领域；若检索主题与生命科学无关，启用 PubMed 大概率召回较少。建议设置 `NCBI_API_KEY` 环境变量以提升速率上限。
+> **openalex 注意**：结果稳定性尚在改善中，可能返回少量无关论文，如结果偏差明显建议暂时关闭。
+>
+> **PubMed 使用提示**：偏向生物医学/生命科学领域；建议设置 `NCBI_API_KEY` 环境变量以提升速率上限。
+>
+> **dblp / openreview**：依赖 CCF 白名单（`ccf_enabled: true`），仅拉取 CCF A/B 级场馆的近期论文，再按关键词过滤。
 
-- 🧲 **拉取策略**: 支持拉取更早的论文以补全预定论文数量
+### 检索与过滤
 
-- 🗃️ **去重与存储**: SQLite 去重功能, 并存储论文内容供日后查询
+- 支持字段化检索：`TITLE`、`ABSTRACT`、`AUTHOR`、`JOURNAL`、`CATEGORY`
+- 支持逻辑操作：`AND`、`OR`、`NOT`
+- 支持全局 `scope`（对所有 queries 生效）
+- **CCF 等级白名单**：`ccf_enabled: true` 时，DBLP/OpenReview 仅收录指定等级（默认 A/B）的场馆
 
-- 📤 **输出能力**: 支持`json`、`markdown`、`html` 等格式输出, 支持替换模板
+### 拉取策略
 
-- 🤖 **LLM 增强**: 支持 OpenAI-compatible 接口调用, 包括摘要翻译与结构化总结支持
+- 严格时间窗口 + 补全回溯：优先拉取 `pull_every` 天内新论文，不足时向前回溯到 `max_lookback_days`
+- 多源结果聚合后执行跨源去重（基于 DOI / arXiv ID / 标题相似度）
 
-- 🌐 **输出语言可配置**: 可通过 `llm.target_lang` 自定义翻译与总结输出语言（如 `Simplified Chinese`、`English`、`Japanese`）
+### 存储
+
+- SQLite 持久化去重，跨次运行不重复推送同一篇论文
+- 完整论文内容（标题、摘要、作者等）可选持久化
+
+### 输出
+
+- 支持 `console`、`json`、`markdown`、`html` 格式
+- HTML 支持自定义模板
+
+### LLM 增强
+
+- 支持 OpenAI-compatible 接口（OpenAI、DeepSeek、SiliconFlow 等）
+- 摘要翻译 + 结构化总结（TLDR / 动机 / 方法 / 结论）
+- 通过 `llm.target_lang` 指定输出语言（如 `Simplified Chinese`、`English`、`Japanese`）
+
+### 本地 Dashboard
+
+运行 `paper-tracker dashboard` 可启动本地 Web 界面（默认 `http://127.0.0.1:8765`），支持：
+
+- 浏览、搜索已入库论文
+- 手动触发刷新
+- 在线配置 LLM 提供商与查询参数
 
 ## 快速开始
 
-建议使用虚拟环境（如 `.venv/`）：
+建议使用虚拟环境：
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate      # macOS / Linux
 # .venv\Scripts\activate       # Windows
-python -m pip install -e .     # Install
+pip install -e .
 ```
 
 用内置示例配置直接运行：
+
 ```bash
 paper-tracker search --config config/example.yml
 ```
-## 自定义配置
 
-复制示例配置，按需修改后运行：
+启动本地 Dashboard：
+
+```bash
+paper-tracker dashboard --config config/example.yml
+# 浏览器打开 http://127.0.0.1:8765
+```
+
+## 自定义配置
 
 ```bash
 cp config/example.yml config/custom.yml
-# 修改 config/custom.yml 字段
+# 按需修改 config/custom.yml
 paper-tracker search --config config/custom.yml
 ```
 
-**以下为必填字段：**
+**必填字段：**
 
 - `queries`：至少设置一条查询
 - `llm.base_url` / `llm.model`：当 `llm.enabled: true` 时必须指定
 
-### (可选) 配置 LLM 环境变量
+### 启用 CCF 过滤（DBLP / OpenReview）
 
-启用 LLM 摘要翻译时需要配置 API Key：
+```yaml
+search:
+  sources: [arxiv, dblp, openreview]
+  ccf_enabled: true
+  ccf_ranks: [A, B]          # 仅收录 CCF A/B 级场馆
+  dblp_recent_years: 2       # 拉取近 N 年的 DBLP 论文集
+  openreview_recent_years: 2
+```
+
+### 配置 LLM 环境变量（可选）
 
 ```bash
 cp .env.example .env
 # 编辑 .env，填入你的 LLM_API_KEY
 ```
 
-📚 详细指引可以查看文档:
+📚 详细文档：
+
 - [📖 使用指南](./docs/zh/guide_user.md)
-
 - [⚙️ 详细参数配置说明](./docs/zh/guide_configuration.md)
-
 - [🔍 查询内部逻辑说明](./docs/zh/architecture_search_logic.md)
-
 - [🔍 arXiv 查询语法说明](./docs/zh/source_arxiv_api_query.md)
-
 - [🔍 OpenAlex 查询语法说明](./docs/zh/source_openalex_api_query.md)
-
 - [🔍 PubMed 查询语法说明](./docs/zh/source_pubmed_api_query.md)
 
 ## 更新
 
-如需更新到最新版本：
-
 ```bash
-cd paper-tracker
 git pull
-python -m pip install -e . --upgrade
+pip install -e . --upgrade
 ```
 
 ## 反馈
 
-如遇到问题或有功能建议，欢迎在 [GitHub Issues](https://github.com/rainerseventeen/paper-tracker/issues) 提交。
-
-请提供运行时的日志信息 (默认在 log/ 下)
+如遇到问题或有功能建议，欢迎在 [GitHub Issues](https://github.com/CheneyNine/PaperTracker/issues) 提交，请附上运行日志（默认在 `log/` 目录下）。
 
 ## 许可证
 
@@ -122,7 +153,7 @@ python -m pip install -e . --upgrade
 
 ## 致谢
 
-本仓库为独立实现，参考了以下项目的功能思路：
+本项目参考了以下开源工作的功能思路：
 
 - [Arxiv-tracker](https://github.com/colorfulandcjy0806/Arxiv-tracker)
 - [daily-arXiv-ai-enhanced](https://github.com/dw-dengwei/daily-arXiv-ai-enhanced)

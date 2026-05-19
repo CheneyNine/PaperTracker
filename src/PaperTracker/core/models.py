@@ -81,8 +81,19 @@ class LLMGeneratedInfo:
     abstract_translation: str | None = None
 
     # Summary enrichment (structured key points)
-    tldr: str | None = None              # Too Long; Didn't Read summary
+    tldr: str | None = None              # State-of-the-art and current landscape
     motivation: str | None = None        # Research motivation and background
-    method: str | None = None            # Research methodology and approach
-    result: str | None = None            # Experimental results and findings
-    conclusion: str | None = None        # Conclusions and implications
+    problem: str | None = None           # Problem the paper solves
+    method: str | None = None            # Research methodology and data
+    result: str | None = None            # Experimental setup and results
+    conclusion: str | None = None        # Main contribution and takeaways
+
+
+@dataclass(frozen=True, slots=True)
+class ThemeContributionInfo:
+    """Theme contribution score for one paper under one research theme."""
+
+    source: str
+    source_id: str
+    contribution_score: int
+    rationale: str | None = None

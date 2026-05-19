@@ -5,6 +5,7 @@ Orchestrates querying multiple paper sources, then sorts and deduplicates aggreg
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol, Sequence
@@ -56,6 +57,7 @@ class PaperSearchService:
     """
 
     sources: tuple[PaperSource, ...]
+    progress_callback: Callable[[str, dict[str, object]], None] | None = None
 
     def search(
         self,
@@ -79,6 +81,9 @@ class PaperSearchService:
         failed_sources: list[str] = []
         for source in self.sources:
             source_name = getattr(source, "name", "unknown")
+            if self.progress_callback is not None:
+                self.progress_callback("source_started", {"source": source_name})
+            log.info("Search source started: source=%s", source_name)
             try:
                 papers = source.search(query, max_results=max_results)
             except Exception as error:  # noqa: BLE001 - source failure must be isolated

@@ -51,3 +51,25 @@ class LLMProvider(Protocol):
             Exception: If generation fails (caller should handle gracefully).
         """
         raise NotImplementedError
+
+    def evaluate_theme_contribution(
+        self,
+        *,
+        title: str,
+        abstract: str,
+        theme_name: str,
+        theme_description: str,
+        target_lang: str = "Simplified Chinese",
+    ) -> dict[str, str | int]:
+        """Evaluate how much a paper contributes to the active research theme."""
+        raise NotImplementedError
+
+    def suggest_theme_queries(
+        self,
+        *,
+        theme_name: str,
+        theme_description: str,
+        target_lang: str = "Simplified Chinese",
+    ) -> list[str]:
+        """Suggest search queries for one user-defined research theme."""
+        raise NotImplementedError

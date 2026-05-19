@@ -54,6 +54,8 @@ def supported_source_names() -> tuple[str, ...]:
 def _source_builders() -> dict[str, SourceBuilder]:
     """Return source builder registry."""
     return {
+        "dblp": _build_dblp_source,
+        "openreview": _build_openreview_source,
         "arxiv": _build_arxiv_source,
         "openalex": _build_openalex_source,
         "pubmed": _build_pubmed_source,
@@ -69,7 +71,9 @@ def _build_arxiv_source(config: AppConfig, dedup_store: SqliteDeduplicateStore |
     from PaperTracker.sources.arxiv.source import ArxivSource
 
     return ArxivSource(
-        client=ArxivApiClient(),
+        client=ArxivApiClient(
+            min_interval_seconds=config.search.arxiv_min_interval_seconds,
+        ),
         scope=config.search.scope,
         keep_version=config.storage.keep_arxiv_version,
         search_config=config.search,
@@ -77,8 +81,45 @@ def _build_arxiv_source(config: AppConfig, dedup_store: SqliteDeduplicateStore |
     )
 
 
+def _build_dblp_source(config: AppConfig, dedup_store: SqliteDeduplicateStore | None) -> PaperSource:
+    """Build DBLP source."""
+    del dedup_store
+    from pathlib import Path
+
+    from PaperTracker.ccf import CCFVenueStore
+    from PaperTracker.sources.dblp.client import DBLPVenueClient
+    from PaperTracker.sources.dblp.source import DBLPSource
+
+    return DBLPSource(
+        client=DBLPVenueClient(),
+        venue_store=CCFVenueStore(Path(config.search.ccf_cache_path)),
+        search_config=config.search,
+        scope=config.search.scope,
+    )
+
+
+def _build_openreview_source(config: AppConfig, dedup_store: SqliteDeduplicateStore | None) -> PaperSource:
+    """Build OpenReview source."""
+    del dedup_store
+    from pathlib import Path
+
+    from PaperTracker.ccf import CCFVenueStore
+    from PaperTracker.sources.openreview.client import OpenReviewHtmlClient
+    from PaperTracker.sources.openreview.source import OpenReviewSource
+
+    return OpenReviewSource(
+        client=OpenReviewHtmlClient(),
+        venue_store=CCFVenueStore(Path(config.search.ccf_cache_path)),
+        search_config=config.search,
+        scope=config.search.scope,
+    )
+
+
 def _build_openalex_source(config: AppConfig, dedup_store: SqliteDeduplicateStore | None) -> PaperSource:
     """Build OpenAlex source."""
+    from pathlib import Path
+
+    from PaperTracker.ccf import CCFVenueStore
     from PaperTracker.sources.openalex.client import OpenAlexApiClient
     from PaperTracker.sources.openalex.source import OpenAlexSource
 
@@ -87,6 +128,7 @@ def _build_openalex_source(config: AppConfig, dedup_store: SqliteDeduplicateStor
         scope=config.search.scope,
         search_config=config.search,
         dedup_store=dedup_store,
+        venue_store=CCFVenueStore(Path(config.search.ccf_cache_path)),
     )
 
 

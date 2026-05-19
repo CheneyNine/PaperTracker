@@ -8,6 +8,7 @@ from PaperTracker.config.app import (
     load_config_with_defaults,
     parse_config_dict,
 )
+from PaperTracker.config.dashboard import DashboardConfig
 from PaperTracker.config.llm import LLMConfig
 from PaperTracker.config.output import OutputConfig
 from PaperTracker.config.runtime import RuntimeConfig
@@ -16,6 +17,7 @@ from PaperTracker.config.storage import StorageConfig
 
 __all__ = [
     "RuntimeConfig",
+    "DashboardConfig",
     "SearchConfig",
     "StorageConfig",
     "OutputConfig",
@@ -25,4 +27,3 @@ __all__ = [
     "parse_config_dict",
     "check_cross_domain",
 ]
-

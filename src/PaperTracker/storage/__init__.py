@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PaperTracker.storage.content import PaperContentStore
+from PaperTracker.storage.dashboard import DashboardPaperRecord, DashboardStore
 from PaperTracker.storage.db import DatabaseManager
 from PaperTracker.storage.deduplicate import ReadOnlyDeduplicateStore, SqliteDeduplicateStore
 from PaperTracker.storage.llm import LLMGeneratedStore
@@ -80,6 +81,8 @@ __all__ = [
     "SqliteDeduplicateStore",
     "ReadOnlyDeduplicateStore",
     "PaperContentStore",
+    "DashboardPaperRecord",
+    "DashboardStore",
     "LLMGeneratedStore",
     "run_migrations",
     "create_storage",

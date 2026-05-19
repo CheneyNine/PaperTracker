@@ -12,6 +12,7 @@ from typing import Any, Mapping
 
 import yaml
 
+from PaperTracker.config.dashboard import DashboardConfig, check_dashboard, load_dashboard
 from PaperTracker.config.llm import LLMConfig, check_llm, load_llm
 from PaperTracker.config.output import OutputConfig, check_output, load_output
 from PaperTracker.config.runtime import RuntimeConfig, check_runtime, load_runtime
@@ -24,6 +25,7 @@ class AppConfig:
     """Aggregate all domain configurations for the application."""
 
     runtime: RuntimeConfig
+    dashboard: DashboardConfig
     search: SearchConfig
     output: OutputConfig
     storage: StorageConfig
@@ -40,12 +42,14 @@ def parse_config_dict(raw: Mapping[str, Any]) -> AppConfig:
         AppConfig: Parsed and validated application configuration.
     """
     runtime = load_runtime(raw)
+    dashboard = load_dashboard(raw)
     search = load_search(raw)
     output = load_output(raw)
     storage = load_storage(raw)
     llm = load_llm(raw)
 
     check_runtime(runtime)
+    check_dashboard(dashboard)
     check_search(search)
     check_output(output)
     check_storage(storage)
@@ -53,6 +57,7 @@ def parse_config_dict(raw: Mapping[str, Any]) -> AppConfig:
 
     config = AppConfig(
         runtime=runtime,
+        dashboard=dashboard,
         search=search,
         output=output,
         storage=storage,

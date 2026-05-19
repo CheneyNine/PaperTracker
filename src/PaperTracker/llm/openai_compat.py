@@ -96,7 +96,7 @@ Abstract: {abstract}
             target_lang: Target language for summary.
 
         Returns:
-            Dictionary with keys: tldr, motivation, method, result, conclusion.
+            Dictionary with keys aligned to internal storage fields.
 
         Raises:
             requests.HTTPError: If API request fails.
@@ -115,11 +115,12 @@ Content:
 Your output should be in {target_lang}.
 Return ONLY a JSON object with these exact keys:
 {{
-  "tldr": "generate a too long; didn't read summary",
-  "motivation": "describe the motivation in this paper",
-  "method": "method of this paper",
-  "result": "result of this paper",
-  "conclusion": "conclusion of this paper"
+  "motivation": "research motivation",
+  "problem": "the concrete problem this paper solves",
+  "state_of_art": "what the current situation or prior limitations are",
+  "method_and_data": "main method, model, and data used",
+  "experiments": "experimental setting and main empirical findings",
+  "contribution": "main contribution and value of the paper"
 }}
 
 Do not include any other text outside the JSON."""
@@ -143,9 +144,144 @@ Do not include any other text outside the JSON."""
 
         # Return dictionary with default values for missing fields
         return {
-            "tldr": str(data.get("tldr", "") or "Summary generation failed"),
-            "motivation": str(data.get("motivation", "") or "Motivation analysis unavailable"),
-            "method": str(data.get("method", "") or "Method extraction failed"),
-            "result": str(data.get("result", "") or "Result analysis unavailable"),
-            "conclusion": str(data.get("conclusion", "") or "Conclusion extraction failed"),
+            "tldr": str(data.get("state_of_art", "") or "现状分析暂缺"),
+            "motivation": str(data.get("motivation", "") or "研究动机暂缺"),
+            "problem": str(data.get("problem", "") or "解决问题暂缺"),
+            "method": str(data.get("method_and_data", "") or "主要方法和数据暂缺"),
+            "result": str(data.get("experiments", "") or "数据实验暂缺"),
+            "conclusion": str(data.get("contribution", "") or "主要贡献暂缺"),
         }
+
+    def evaluate_theme_contribution(
+        self,
+        *,
+        title: str,
+        abstract: str,
+        theme_name: str,
+        theme_description: str,
+        target_lang: str = "Simplified Chinese",
+    ) -> dict[str, str | int]:
+        """Score one paper's contribution to a user-defined research theme."""
+        system_prompt = (
+            "You are an academic research assistant. "
+            "Judge how much a paper contributes to a target research theme. "
+            "Be strict, evidence-based, and avoid inflating scores."
+        )
+
+        user_prompt = f"""Please evaluate the contribution of the following paper to a research theme.
+
+Research theme name:
+{theme_name}
+
+Research theme description:
+{theme_description}
+
+Paper title:
+{title}
+
+Paper abstract:
+{abstract}
+
+Return ONLY a JSON object in {target_lang} with these exact keys:
+{{
+  "contribution_score": 0,
+  "rationale": "brief reason"
+}}
+
+Rules:
+- contribution_score must be an integer between 0 and 100.
+- Higher score means the paper is more directly useful to the research theme.
+- rationale should be concise and evidence-based.
+- Do not output any text outside the JSON."""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        response_text = self.client.chat_completion(
+            messages=messages,
+            model=self.model,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+
+        data = extract_json(response_text)
+        raw_score = data.get("contribution_score", 0)
+        try:
+            score = int(raw_score)
+        except (TypeError, ValueError):
+            score = 0
+        score = max(0, min(100, score))
+        rationale = str(data.get("rationale", "") or "").strip()
+        return {
+            "contribution_score": score,
+            "rationale": rationale,
+        }
+
+    def suggest_theme_queries(
+        self,
+        *,
+        theme_name: str,
+        theme_description: str,
+        target_lang: str = "Simplified Chinese",
+    ) -> list[str]:
+        """Suggest related search queries for one research theme."""
+        system_prompt = (
+            "You are an academic literature search assistant. "
+            "Design concise search queries that are likely to retrieve relevant papers. "
+            "Use English search phrases only."
+        )
+
+        user_prompt = f"""Please generate search keywords for the following research theme.
+
+Research theme name:
+{theme_name}
+
+Research theme description:
+{theme_description}
+
+Return ONLY a JSON object in {target_lang} with this exact structure:
+{{
+  "queries": [
+    "query 1",
+    "query 2"
+  ]
+}}
+
+Rules:
+- Return 6 to 8 query phrases.
+- Each query should be short and suitable for academic search.
+- Use English only. Do not output Chinese keywords.
+- Avoid numbering, explanations, or any text outside the JSON."""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        response_text = self.client.chat_completion(
+            messages=messages,
+            model=self.model,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+
+        data = extract_json(response_text)
+        raw_queries = data.get("queries", [])
+        if not isinstance(raw_queries, list):
+            return []
+        queries: list[str] = []
+        seen: set[str] = set()
+        for item in raw_queries:
+            if not isinstance(item, str):
+                continue
+            normalized = " ".join(item.split())
+            if not normalized:
+                continue
+            key = normalized.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            queries.append(normalized)
+        return queries

@@ -17,6 +17,11 @@ log:
   to_file: true
   dir: log
 
+dashboard:
+  host: 127.0.0.1
+  port: 8765
+  auto_refresh_seconds: 30
+
 queries:
   - NAME: base
     OR:
@@ -29,6 +34,13 @@ search:
   max_lookback_days: 30
   max_fetch_items: 125
   fetch_batch_size: 25
+  arxiv_min_interval_seconds: 5.0
+  ccf_enabled: false
+  ccf_cache_path: database/ccf_venues_ab.json
+  ccf_ranks: [A, B]
+  dblp_recent_years: 2
+  openreview_recent_years: 2
+  openreview_max_pages: 3
 
 output:
   base_dir: output

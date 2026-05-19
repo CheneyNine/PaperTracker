@@ -5,8 +5,12 @@ Calls the arXiv Atom API over HTTP, with retry/backoff and HTTPS→HTTP fallback
 
 from __future__ import annotations
 
+import json
 import random
 import time
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+from tempfile import gettempdir
 from typing import Optional
 
 import requests
@@ -20,8 +24,9 @@ DEFAULT_TIMEOUT = 45.0
 MAX_ATTEMPTS = 6
 BASE_PAUSE = 1.5
 MAX_SLEEP = 20
-TOO_MANY_REQUESTS_BASE_PAUSE = 5.0
-TOO_MANY_REQUESTS_MAX_SLEEP = 120.0
+DEFAULT_MIN_INTERVAL_SECONDS = 5.0
+TOO_MANY_REQUESTS_MAX_SLEEP = 180.0
+RATE_LIMIT_STATE_PATH = Path(gettempdir()) / "paper-tracker-arxiv-rate-limit.json"
 
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
@@ -31,6 +36,10 @@ HEADERS = {
 }
 
 
+class ArxivRateLimitedError(RuntimeError):
+    """Raised when arXiv rate-limits requests and the client aborts early."""
+
+
 class ArxivApiClient:
     """Low-level HTTP client for the arXiv Atom API.
 
@@ -38,10 +47,27 @@ class ArxivApiClient:
     Parsing and domain mapping are handled elsewhere.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        min_interval_seconds: float = DEFAULT_MIN_INTERVAL_SECONDS,
+        rate_limit_state_path: str | Path | None = None,
+    ) -> None:
         """Initialize the client with a reusable HTTP session.
+
+        Args:
+            min_interval_seconds: Minimum spacing between arXiv requests.
+            rate_limit_state_path: Optional shared state file used to carry
+                rate-limit cooldowns across CLI runs.
         """
         self._session = requests.Session()
+        self._min_interval_seconds = min_interval_seconds
+        self._rate_limit_state_path = (
+            Path(rate_limit_state_path)
+            if rate_limit_state_path is not None
+            else RATE_LIMIT_STATE_PATH
+        )
+        self._next_request_not_before = 0.0
 
     def close(self) -> None:
         """Close the underlying HTTP session and release pooled connections.
@@ -113,6 +139,13 @@ class ArxivApiClient:
         assert last_err is not None
         raise last_err
 
+    def current_cooldown_seconds(self) -> float:
+        """Return remaining shared arXiv cooldown seconds."""
+        now = time.time()
+        shared_next_allowed = self._read_shared_next_allowed_at()
+        next_allowed = max(self._next_request_not_before, shared_next_allowed)
+        return max(0.0, next_allowed - now)
+
     def _get_with_retry(
         self,
         base_url: str,
@@ -142,7 +175,8 @@ class ArxivApiClient:
         for attempt in range(1, MAX_ATTEMPTS + 1):
             last_status_code = None
             try:
-                log.debug("arXiv request attempt %d/%d to %s", attempt, MAX_ATTEMPTS, base_url)
+                self._wait_for_request_slot()
+                log.info("arXiv request attempt %d/%d", attempt, MAX_ATTEMPTS)
                 resp = self._session.get(base_url, params=params, headers=HEADERS, timeout=timeout)
                 if resp.status_code in RETRYABLE_STATUS:
                     raise requests.exceptions.HTTPError(
@@ -160,29 +194,130 @@ class ArxivApiClient:
                 last_err = e
                 st = getattr(e.response, "status_code", None)
                 last_status_code = st if isinstance(st, int) else None
+                if last_status_code == 429:
+                    delay = self._resolve_429_delay(attempt, response=getattr(e, "response", None))
+                    self._block_requests_for(delay)
+                    raise ArxivRateLimitedError(
+                        f"arXiv rate limited request; cooldown scheduled for {delay:.1f}s"
+                    ) from e
                 if st not in RETRYABLE_STATUS:
                     break
 
             if attempt < MAX_ATTEMPTS:
-                log.debug("arXiv retrying after attempt %d (error=%s)", attempt, last_err)
-                self._sleep_backoff(attempt, status_code=last_status_code)
+                log.warning("arXiv retry scheduled after attempt %d: %s", attempt, last_err)
+                self._sleep_backoff(
+                    attempt,
+                    status_code=last_status_code,
+                    response=getattr(last_err, "response", None),
+                )
 
         assert last_err is not None
         raise last_err
 
-    @staticmethod
-    def _sleep_backoff(attempt: int, *, status_code: int | None = None) -> None:
+    def _wait_for_request_slot(self) -> None:
+        """Sleep until the next shared arXiv request slot becomes available."""
+        now = time.time()
+        shared_next_allowed = self._read_shared_next_allowed_at()
+        next_allowed = max(now, self._next_request_not_before, shared_next_allowed)
+        if next_allowed > now:
+            delay = next_allowed - now
+            log.info("arXiv waiting %.1fs before next request", delay)
+            time.sleep(delay)
+            now = time.time()
+
+        reserved_until = now + self._min_interval_seconds
+        self._next_request_not_before = reserved_until
+        self._write_shared_next_allowed_at(reserved_until)
+
+    def _sleep_backoff(
+        self,
+        attempt: int,
+        *,
+        status_code: int | None = None,
+        response: requests.Response | None = None,
+    ) -> None:
         """Sleep with status-aware backoff.
 
         Args:
             attempt: Current attempt index (1-based).
             status_code: Last HTTP status code when available.
+            response: Optional HTTP response used for `Retry-After`.
         """
         if status_code == 429:
-            # arXiv does not provide reliable Retry-After for 429; use fixed exponential backoff.
-            delay = min(TOO_MANY_REQUESTS_BASE_PAUSE * (2 ** (attempt - 1)), TOO_MANY_REQUESTS_MAX_SLEEP)
+            delay = self._resolve_429_delay(attempt, response=response)
+            self._block_requests_for(delay)
             time.sleep(delay)
             return
 
         delay = min(BASE_PAUSE * (2 ** (attempt - 1)) + random.uniform(0, 0.5), MAX_SLEEP)
         time.sleep(delay)
+
+    def _resolve_429_delay(
+        self,
+        attempt: int,
+        *,
+        response: requests.Response | None,
+    ) -> float:
+        """Resolve the cooldown delay to use after HTTP 429."""
+        retry_after_seconds = _parse_retry_after_seconds(response)
+        if retry_after_seconds is not None:
+            return min(max(retry_after_seconds, self._min_interval_seconds), TOO_MANY_REQUESTS_MAX_SLEEP)
+
+        fallback = self._min_interval_seconds * (2 ** attempt)
+        return min(fallback, TOO_MANY_REQUESTS_MAX_SLEEP)
+
+    def _block_requests_for(self, delay: float) -> None:
+        """Persist a shared cooldown so subsequent runs also wait."""
+        next_allowed = time.time() + max(delay, self._min_interval_seconds)
+        self._next_request_not_before = max(self._next_request_not_before, next_allowed)
+        self._write_shared_next_allowed_at(next_allowed)
+
+    def _read_shared_next_allowed_at(self) -> float:
+        """Load the persisted shared cooldown timestamp."""
+        try:
+            payload = json.loads(self._rate_limit_state_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return 0.0
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return 0.0
+
+        value = payload.get("next_allowed_at")
+        if isinstance(value, (int, float)):
+            return float(value)
+        return 0.0
+
+    def _write_shared_next_allowed_at(self, next_allowed_at: float) -> None:
+        """Persist the shared cooldown timestamp atomically."""
+        try:
+            self._rate_limit_state_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self._rate_limit_state_path.with_suffix(".tmp")
+            payload = {"next_allowed_at": next_allowed_at}
+            temp_path.write_text(json.dumps(payload), encoding="utf-8")
+            temp_path.replace(self._rate_limit_state_path)
+        except OSError:
+            log.debug("arXiv rate-limit state write failed: %s", self._rate_limit_state_path)
+
+
+def _parse_retry_after_seconds(response: requests.Response | None) -> float | None:
+    """Parse `Retry-After` into seconds when possible."""
+    if response is None:
+        return None
+
+    raw_value = response.headers.get("Retry-After", "").strip()
+    if not raw_value:
+        return None
+
+    try:
+        return max(float(raw_value), 0.0)
+    except ValueError:
+        pass
+
+    try:
+        retry_after_at = parsedate_to_datetime(raw_value)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+
+    if retry_after_at.tzinfo is None:
+        retry_after_at = retry_after_at.astimezone()
+
+    return max(retry_after_at.timestamp() - time.time(), 0.0)

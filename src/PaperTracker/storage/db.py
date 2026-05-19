@@ -6,6 +6,7 @@ Manages SQLite connection lifecycle and initialization, ensures database files e
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 from PaperTracker.storage.migration import run_migrations
@@ -21,27 +22,32 @@ class DatabaseManager:
     Supports context manager protocol for automatic connection cleanup.
     """
 
-    _instance = None
+    _instances: dict[tuple[str, int], DatabaseManager] = {}
 
     def __new__(cls, db_path: Path):
         """Create or return existing DatabaseManager instance.
 
-        The singleton is assigned only after both ensure_db and run_migrations
-        complete successfully. If run_migrations raises, cls._instance remains
-        None so the next call can retry with a clean state.
+        The manager is shared per `(database path, thread)` pair. This keeps
+        one reusable connection per thread while avoiding SQLite's
+        `check_same_thread` violations in background refresh workers.
 
         Args:
             db_path: Absolute path or project-relative path to database file.
 
         Returns:
-            DatabaseManager singleton instance.
+            DatabaseManager instance scoped to the current thread.
         """
-        if cls._instance is None:
+        resolved_path = str(db_path.resolve())
+        thread_id = threading.get_ident()
+        instance_key = (resolved_path, thread_id)
+
+        if instance_key not in cls._instances:
             instance = super().__new__(cls)
             instance.conn = ensure_db(db_path)
+            instance._instance_key = instance_key
             run_migrations(instance.conn)
-            cls._instance = instance
-        return cls._instance
+            cls._instances[instance_key] = instance
+        return cls._instances[instance_key]
 
     def get_connection(self) -> sqlite3.Connection:
         """Get the shared database connection.
@@ -59,7 +65,7 @@ class DatabaseManager:
         """
         if hasattr(self, 'conn') and self.conn:
             self.conn.close()
-            type(self)._instance = None
+            type(self)._instances.pop(getattr(self, "_instance_key", None), None)
 
     def __enter__(self) -> DatabaseManager:
         """Enter context manager.

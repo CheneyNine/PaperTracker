@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper Tracker Dashboard</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <p class="sidebar-kicker">Paper Tracker</p>
+        <h1>论文研究看板</h1>
+      </div>
+
+      <section class="sidebar-section">
+        <p class="sidebar-label">Research Theme</p>
+        <h2>研究主题</h2>
+        <div id="theme-directory" class="theme-list"></div>
+        <form id="theme-form" class="sidebar-form">
+          <input
+            id="theme-name-input"
+            class="sidebar-input"
+            type="text"
+            name="theme_name"
+            placeholder="主题名称"
+            autocomplete="off"
+          >
+          <textarea
+            id="theme-description-input"
+            class="sidebar-input sidebar-textarea"
+            name="theme_description"
+            placeholder="描述研究动机、问题范围、重点方法或评价标准"
+          ></textarea>
+          <button type="submit" class="sidebar-button">保存主题</button>
+        </form>
+        <p id="theme-feedback" class="sidebar-feedback"></p>
+      </section>
+
+      <section class="sidebar-section">
+        <p class="sidebar-label">Keywords</p>
+        <div class="sidebar-section-head">
+          <h2>检索目录</h2>
+        </div>
+        <p class="sidebar-note">当前显示的是所选主题下的关键词。新增条目会在下次刷新时参与这个主题的检索；删除条目时，只会归档当前主题列表里这一组论文。</p>
+        <form id="query-form" class="sidebar-form">
+          <div class="query-input-row">
+            <input
+              id="query-input"
+              class="sidebar-input"
+              type="text"
+              name="query"
+              placeholder="添加新的检索关键词"
+              autocomplete="off"
+            >
+            <button type="submit" class="sidebar-button query-add-button">添加</button>
+          </div>
+          <button id="query-suggest-button" type="button" class="sidebar-button">AI 智能生成关键词</button>
+        </form>
+        <p id="query-feedback" class="sidebar-feedback"></p>
+        <div id="query-directory" class="nav-tree"></div>
+      </section>
+    </aside>
+
+    <main class="content">
+      <div class="content-toolbar">
+        <div id="theme-switcher" class="filter-chip-row content-filter-row"></div>
+        <div class="content-actions">
+          <button id="view-toggle-button" type="button" class="sidebar-button">设置</button>
+          <button id="refresh-button" type="button" class="sidebar-button sidebar-button-primary">更新</button>
+          <button id="sort-button" type="button" class="sidebar-button sort-button">按贡献度排序</button>
+        </div>
+      </div>
+      <div id="content-status" class="content-status">
+        <p id="refresh-status" class="content-sub">只会刷新当前选中的研究主题，并按这个主题下的关键词去检索、补齐摘要与贡献度。</p>
+        <div class="progress-track" aria-hidden="true">
+          <div id="refresh-progress-bar" class="progress-bar"></div>
+        </div>
+      </div>
+
+      <section id="papers-view">
+        <div id="active-list" class="paper-sections"></div>
+
+        <section class="archive-panel">
+          <details id="archive-details" class="archive-details">
+            <summary class="archive-summary">
+              <div>
+                <p class="content-kicker">Archive</p>
+                <h2>已归档论文</h2>
+              </div>
+              <div class="archive-summary-side">
+                <p class="content-sub">这里收纳“已了解 / 忽略”的论文，可随时恢复。</p>
+                <span class="archive-toggle-hint" aria-hidden="true"></span>
+              </div>
+            </summary>
+            <div id="archive-list" class="archive-list"></div>
+          </details>
+        </section>
+      </section>
+
+      <section id="settings-view" class="settings-view" hidden></section>
+    </main>
+  </div>
+
+  <script>
+    window.DASHBOARD_CONFIG = __DASHBOARD_CONFIG__;
+  </script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

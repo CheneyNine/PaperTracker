@@ -159,6 +159,7 @@ queries:
 - `max_fetch_items`: 单条 query 最大拉取的原始论文条目数（包括重复和被过滤的）; 可选值: `-1`（不限制）或大于 0 的整数。建议值：`125`（控制 API 调用次数）。
 
 - `fetch_batch_size`: 每次 API 请求拉取的论文数量（分页大小）; 可选值: 整数，必须大于 0。建议值：`25`。
+- `arxiv_min_interval_seconds`: arXiv 请求最小间隔秒数（对首个请求、翻页请求、重试请求统一生效）; 可选值: 大于 0 的数字。默认值: `5.0`。如果仍遇到 `429 Too Many Requests`，可继续上调到 `8.0` 或 `10.0`。
 - `openalex_relevance_threshold`: OpenAlex 本地结果最小相关分阈值（`relevance_score`）；低于该值的论文会被丢弃; 可选值: 大于等于 0 的数字。默认值: `0.0`（不做阈值过滤）。推荐值: `1.5`（通常能显著减少无关结果）。
 
 **排序策略**：
@@ -176,6 +177,7 @@ search:
   max_lookback_days: 30       # 如果 fill_enabled=true，最多回溯 30 天
   max_fetch_items: 125        # 最多拉取 125 条原始数据
   fetch_batch_size: 25        # 每页 25 条
+  arxiv_min_interval_seconds: 5.0
   openalex_relevance_threshold: 1.5
 ```
 
@@ -184,6 +186,7 @@ search:
 - `fill_enabled=true` 时：`max_lookback_days == -1` 或 `max_lookback_days >= pull_every`
 - `max_fetch_items == -1` 或 `max_fetch_items > 0`
 - `fetch_batch_size > 0`
+- `arxiv_min_interval_seconds > 0`
 - `openalex_relevance_threshold >= 0`
 
 ### 2.7 `output`

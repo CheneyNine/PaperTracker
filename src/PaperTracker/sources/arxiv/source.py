@@ -7,6 +7,7 @@ multi-round fetching strategy.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import re
 from typing import TYPE_CHECKING
 
 from PaperTracker.core.models import Paper
@@ -14,10 +15,14 @@ from PaperTracker.core.query import SearchQuery
 from PaperTracker.sources.arxiv.client import ArxivApiClient
 from PaperTracker.sources.arxiv.fetch import collect_papers_with_time_filter
 from PaperTracker.sources.arxiv.parser import parse_arxiv_feed
+from PaperTracker.utils.log import log
 
 if TYPE_CHECKING:
     from PaperTracker.config import SearchConfig
     from PaperTracker.storage.deduplicate import SqliteDeduplicateStore
+
+
+_ASCII_SEARCH_RE = re.compile(r"[A-Za-z0-9]")
 
 
 @dataclass(slots=True)
@@ -57,6 +62,20 @@ class ArxivSource:
         """
         if self.search_config is None:
             raise ValueError("ArxivSource.search_config is required for multi-round fetching")
+        if not _supports_arxiv_query(query, self.scope):
+            log.info(
+                "Skip arXiv search for query %r because it does not contain usable English search terms",
+                query.name or "unnamed",
+            )
+            return []
+        cooldown_seconds = self.client.current_cooldown_seconds()
+        if cooldown_seconds > 0:
+            log.info(
+                "Skip arXiv search for query %r because client cooldown is active for %.1fs",
+                query.name or "unnamed",
+                cooldown_seconds,
+            )
+            return []
 
         policy = (
             self.search_config
@@ -105,3 +124,21 @@ class ArxivSource:
         """Close resources held by the arXiv source adapter.
         """
         self.client.close()
+
+
+def _supports_arxiv_query(query: SearchQuery, scope: SearchQuery | None) -> bool:
+    """Return whether one query is suitable for arXiv text search.
+
+    arXiv title/abstract search is effectively English-first. Queries that only
+    contain CJK text or other non-ASCII tokens tend to produce no value while
+    still consuming rate-limit budget, so they are skipped early.
+    """
+    for candidate in (scope, query):
+        if candidate is None:
+            continue
+        for field_query in candidate.fields.values():
+            terms = [*field_query.AND, *field_query.OR]
+            for term in terms:
+                if _ASCII_SEARCH_RE.search(str(term)):
+                    return True
+    return False
