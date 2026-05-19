@@ -22,7 +22,7 @@ MAX_PER_PAGE = 200
 DEFAULT_OPENALEX_SORT = "publication_date:desc,relevance_score:desc"
 
 HEADERS = {
-    "User-Agent": "paper-tracker/0.1 (+https://github.com/RainerSeventeen/paper-tracker)",
+    "User-Agent": "paper-tracker/0.2 (+https://github.com/CheneyNine/PaperTracker)",
     "Accept": "application/json",
 }
 

@@ -12,7 +12,7 @@ import requests
 
 OPENREVIEW_BASE_URL = "https://openreview.net/"
 HEADERS = {
-    "User-Agent": "paper-tracker/0.1 (+https://github.com/RainerSeventeen/paper-tracker)",
+    "User-Agent": "paper-tracker/0.2 (+https://github.com/CheneyNine/PaperTracker)",
 }
 
 

@@ -12,7 +12,7 @@ import requests
 
 DBLP_BASE_URL = "https://dblp.org/"
 HEADERS = {
-    "User-Agent": "paper-tracker/0.1 (+https://github.com/RainerSeventeen/paper-tracker)",
+    "User-Agent": "paper-tracker/0.2 (+https://github.com/CheneyNine/PaperTracker)",
 }
 
 

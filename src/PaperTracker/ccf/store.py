@@ -67,13 +67,7 @@ class CCFVenueStore:
 
     def refresh_cache(self) -> dict[str, Any]:
         """Rewrite the local cache file from the bundled snapshot."""
-        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.loads(_load_bundled_snapshot_text())
-        payload["refreshed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        self.cache_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        self._write_bundled_payload()
         return self.get_status()
 
     def get_status(self) -> dict[str, Any]:
@@ -83,6 +77,17 @@ class CCFVenueStore:
             "ccf_venue_count": len(data.get("venues", [])),
             "ccf_last_updated_at": data.get("refreshed_at"),
         }
+
+    def _write_bundled_payload(self) -> dict[str, Any]:
+        """Write bundled snapshot to disk and return the in-memory payload."""
+        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.loads(_load_bundled_snapshot_text())
+        payload["refreshed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.cache_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return payload
 
     def match_venue_name(
         self,
@@ -152,9 +157,7 @@ class CCFVenueStore:
 
     def _seed_cache(self) -> dict[str, Any]:
         """Create cache file from bundled snapshot when missing."""
-        self.refresh_cache()
-        raw = json.loads(self.cache_path.read_text(encoding="utf-8"))
-        return dict(raw) if isinstance(raw, dict) else {}
+        return self._write_bundled_payload()
 
 
 def _load_bundled_snapshot_text() -> str:

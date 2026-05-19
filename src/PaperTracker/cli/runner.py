@@ -132,22 +132,21 @@ class CommandRunner:
                 )
                 if self.config_path is None:
                     raise click.ClickException("Dashboard requires a config path")
+                dashboard_store = DashboardStore(db_manager)
                 run_dashboard_server(
                     self.config.dashboard,
-                    DashboardStore(db_manager),
+                    dashboard_store,
                     query_config=DashboardQueryConfig(self.config_path),
                     settings_config=DashboardSettingsConfig(self.config_path, Path(".env")),
                     ccf_store=CCFVenueStore(Path(self.config.search.ccf_cache_path)),
                     refresh_callback=lambda progress_callback, theme_id, source_names: self._refresh_dashboard_data(
-                        db_manager=db_manager,
-                        dashboard_store=DashboardStore(db_manager),
                         progress_callback=progress_callback,
                         theme_id=theme_id,
                         source_names=source_names,
                     ),
                     suggest_queries_callback=lambda theme_id: self._suggest_theme_queries(
                         theme_id=theme_id,
-                        dashboard_store=DashboardStore(db_manager),
+                        dashboard_store=dashboard_store,
                         llm_service=dashboard_llm_service,
                     ),
                 )
@@ -160,14 +159,11 @@ class CommandRunner:
     def _refresh_dashboard_data(
         self,
         *,
-        db_manager,
-        dashboard_store: DashboardStore,
         progress_callback,
         theme_id: int | None,
         source_names: tuple[str, ...] | None,
     ) -> None:
         """Refresh dashboard data by running search and backfilling missing translations."""
-        del db_manager, dashboard_store
         search_service = None
         try:
             refresh_config = self._load_runtime_config()

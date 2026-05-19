@@ -31,7 +31,7 @@ RATE_LIMIT_STATE_PATH = Path(gettempdir()) / "paper-tracker-arxiv-rate-limit.jso
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 HEADERS = {
-    "User-Agent": "paper-tracker/0.1 (+https://github.com/RainerSeventeen/paper-tracker)",
+    "User-Agent": "paper-tracker/0.2 (+https://github.com/CheneyNine/PaperTracker)",
     "Accept": "application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 

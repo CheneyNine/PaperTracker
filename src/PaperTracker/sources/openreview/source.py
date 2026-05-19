@@ -7,7 +7,7 @@ and enriches matched papers with forum abstracts when available.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from html import unescape
 from urllib.parse import quote, urljoin
@@ -147,25 +147,12 @@ class OpenReviewSource:
 
                 abstract, pdf_url = self._fetch_forum_details(forum_url)
                 matched.append(
-                    Paper(
-                        source=candidate.source,
-                        id=candidate.id,
-                        title=candidate.title,
-                        authors=candidate.authors,
+                    replace(
+                        candidate,
                         abstract=abstract,
-                        published=candidate.published,
-                        updated=candidate.updated,
-                        primary_category=candidate.primary_category,
-                        categories=candidate.categories,
                         links=PaperLinks(abstract=forum_url, pdf=pdf_url),
-                        doi=None,
-                        extra=dict(candidate.extra),
                     )
                 )
-                page_hits += 1
-
-            if page_hits == 0:
-                break
 
         return matched
 

@@ -22,7 +22,7 @@ MAX_SLEEP = 8.0
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 HEADERS = {
-    "User-Agent": "paper-tracker/0.1 (+https://github.com/RainerSeventeen/paper-tracker)",
+    "User-Agent": "paper-tracker/0.2 (+https://github.com/CheneyNine/PaperTracker)",
     "Accept": "application/json",
 }
 
