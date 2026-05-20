@@ -8,31 +8,30 @@
 
 **English | [中文](./README.md)**
 
-Paper Tracker is a minimal paper tracking tool that queries multiple databases — arXiv, OpenAlex, PubMed, DBLP, and OpenReview — filters results by CCF venue ranking, optionally enriches them with LLM summaries, and outputs structured results so you can continuously track the latest research in your field.
+Paper Tracker is a minimal paper tracking tool that queries multiple databases — arXiv, OpenAlex, DBLP, and OpenReview — filters results by CCF venue ranking, optionally enriches them with LLM summaries, and outputs structured results so you can continuously track the latest research in your field.
 
 **If this project helps you, please consider giving it a Star ⭐. Thank you!**
 
 ## Demo
 
-![HTML Output Preview](./docs/assets/html_output_preview.png)
+![Dashboard Preview](./docs/assets/preview_dashboard.png)
+
+![Settings Preview](./docs/assets/preview_setting.png)
 
 ## Features
 
 ### Sources
 
-Five sources supported, all can be enabled simultaneously:
+Four sources supported, all can be enabled simultaneously:
 
 | Source | Data Type | Query Field Support | Local Post-Filter | CCF Filter | Cross-Source Dedupe |
 |--------|-----------|:-------------------:|:-----------------:|:----------:|:-------------------:|
 | `arxiv` | Preprints | Full | — | — | ✅ |
 | `openalex` | Journals / Conferences / Preprints | Partial | ✅ | — | ✅ |
-| `pubmed` | Biomedical journals | Partial | — | — | ✅ |
 | `dblp` | CCF venue proceedings | Local keyword match | ✅ | ✅ | ✅ |
 | `openreview` | CCF conference submissions | Local keyword match | ✅ | ✅ | ✅ |
 
 > **openalex note**: Result quality is still improving — it may occasionally return off-topic papers. Disable if results are consistently noisy.
->
-> **PubMed tip**: Biased toward biomedicine / life sciences. Setting `NCBI_API_KEY` is recommended to raise the rate limit.
 >
 > **dblp / openreview**: Requires `ccf_enabled: true`. Only papers from CCF A/B venues are fetched, then filtered by your keywords.
 
@@ -134,7 +133,6 @@ cp .env.example .env
 - [🔍 Search Logic Overview](./docs/en/architecture_search_logic.md)
 - [🔍 arXiv Query Syntax](./docs/en/source_arxiv_api_query.md)
 - [🔍 OpenAlex Query Parameters](./docs/en/source_openalex_api_query.md)
-- [🔍 PubMed Query Syntax](./docs/en/source_pubmed_api_query.md)
 
 ## Update
 

@@ -1,12 +1,11 @@
 """Dashboard settings configuration helpers.
 
-Loads and updates dashboard-editable YAML and .env settings for search sources
+Loads and updates dashboard-editable YAML settings for search sources
 and LLM runtime configuration.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -19,13 +18,12 @@ from PaperTracker.sources.registry import supported_source_names
 class DashboardSettingsConfig:
     """Read and update dashboard-managed settings."""
 
-    def __init__(self, config_path: Path, env_path: Path) -> None:
-        """Initialize with YAML config and env file paths."""
+    def __init__(self, config_path: Path) -> None:
+        """Initialize with YAML config path."""
         self.config_path = config_path
-        self.env_path = env_path
 
     def get_settings(self) -> dict[str, Any]:
-        """Return dashboard-editable settings from current config and env."""
+        """Return dashboard-editable settings from current config."""
         config = load_config_with_defaults(self.config_path)
         return {
             "llm": {
@@ -45,9 +43,6 @@ class DashboardSettingsConfig:
                 "ccf_enabled": config.search.ccf_enabled,
                 "ccf_ranks": list(config.search.ccf_ranks),
                 "arxiv_min_interval_seconds": config.search.arxiv_min_interval_seconds,
-                "ncbi_api_key_env": config.search.ncbi_api_key_env,
-                "ncbi_api_key": "",
-                "ncbi_api_key_set": bool(os.getenv(config.search.ncbi_api_key_env, "").strip()),
             },
         }
 
@@ -57,7 +52,7 @@ class DashboardSettingsConfig:
         return config.search.sources
 
     def save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Persist dashboard-editable settings into YAML and env files."""
+        """Persist dashboard-editable settings into the YAML config file."""
         current = self.get_settings()
         updated_yaml = self._load_yaml()
 
@@ -96,34 +91,17 @@ class DashboardSettingsConfig:
             search_payload.get("arxiv_min_interval_seconds", current["search"]["arxiv_min_interval_seconds"])
         )
 
-        ncbi_api_key_env = str(current["search"]["ncbi_api_key_env"]).strip()
-        submitted_ncbi_key = str(search_payload.get("ncbi_api_key", "")).strip()
-        ncbi_key_value = submitted_ncbi_key or os.getenv(ncbi_api_key_env, "")
-
         original_yaml_exists = self.config_path.exists()
         original_yaml_text = self.config_path.read_text(encoding="utf-8") if original_yaml_exists else ""
-        original_env_exists = self.env_path.exists()
-        original_env_text = self.env_path.read_text(encoding="utf-8") if original_env_exists else ""
-        original_ncbi_env = os.getenv(ncbi_api_key_env)
 
         try:
             self._write_yaml(updated_yaml)
-            self._write_env_updates({ncbi_api_key_env: ncbi_key_value})
-            os.environ[ncbi_api_key_env] = ncbi_key_value
             load_config_with_defaults(self.config_path)
         except Exception:
             if original_yaml_exists:
                 self.config_path.write_text(original_yaml_text, encoding="utf-8")
             elif self.config_path.exists():
                 self.config_path.unlink()
-            if original_env_exists:
-                self.env_path.write_text(original_env_text, encoding="utf-8")
-            elif self.env_path.exists():
-                self.env_path.unlink()
-            if original_ncbi_env is None:
-                os.environ.pop(ncbi_api_key_env, None)
-            else:
-                os.environ[ncbi_api_key_env] = original_ncbi_env
             raise
 
         return self.get_settings()
@@ -145,14 +123,6 @@ class DashboardSettingsConfig:
             ),
             encoding="utf-8",
         )
-
-    def _write_env_updates(self, updates: dict[str, str]) -> None:
-        """Upsert selected env vars while preserving unrelated lines."""
-        lines = self.env_path.read_text(encoding="utf-8").splitlines() if self.env_path.exists() else []
-        for key, value in updates.items():
-            lines = _upsert_env_key(lines, key, value)
-        text = "\n".join(lines).rstrip() + "\n" if lines else ""
-        self.env_path.write_text(text, encoding="utf-8")
 
 
 def _normalize_source_names(value: object, *, allowed: tuple[str, ...]) -> tuple[str, ...]:
@@ -190,23 +160,3 @@ def _normalize_ccf_ranks(value: object) -> list[str]:
     if not normalized:
         raise ValueError("At least one CCF rank must be selected")
     return normalized
-
-
-def _upsert_env_key(lines: list[str], key: str, value: str) -> list[str]:
-    """Replace or append one KEY=VALUE line in .env content."""
-    prefix = f"{key}="
-    updated = False
-    next_lines: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            next_lines.append(line)
-            continue
-        if line.startswith(prefix):
-            next_lines.append(f"{prefix}{value}")
-            updated = True
-            continue
-        next_lines.append(line)
-    if not updated:
-        next_lines.append(f"{prefix}{value}")
-    return next_lines

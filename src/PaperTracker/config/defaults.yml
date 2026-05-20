@@ -54,9 +54,6 @@ search:
   fetch_batch_size: 25        # Fetch count for each round
   arxiv_min_interval_seconds: 12.0                  # Minimum spacing between arXiv requests across pages/retries
   openalex_relevance_threshold: 0.0                    # local threshold for OpenAlex relevance_score
-  ncbi_api_key_env: NCBI_API_KEY   # env var name for NCBI API key (optional, improves rate limit)
-  ncbi_tool: paper-tracker         # tool identifier sent to NCBI E-utilities
-  ncbi_email: ""                   # contact email sent to NCBI E-utilities (recommended)
 
 # output domain
 output:

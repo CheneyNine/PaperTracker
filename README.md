@@ -8,31 +8,30 @@
 
 **[English](./README.en.md) | 中文**
 
-Paper Tracker 是一个最小化的论文追踪工具，支持从 arXiv、OpenAlex、PubMed、DBLP、OpenReview 多个来源检索论文，结合 CCF 等级过滤和 LLM 摘要增强，按配置输出结构化结果，便于持续追踪领域最新进展。
+Paper Tracker 是一个最小化的论文追踪工具，支持从 arXiv、OpenAlex、DBLP、OpenReview 多个来源检索论文，结合 CCF 等级过滤和 LLM 摘要增强，按配置输出结构化结果，便于持续追踪领域最新进展。
 
 **如果该项目对你有帮助，请麻烦点一个 Star ⭐，谢谢！**
 
 ## 效果展示
 
-![HTML 输出结果演示](./docs/assets/html_output_preview.png)
+![Dashboard 预览](./docs/assets/preview_dashboard.png)
+
+![设置页面预览](./docs/assets/preview_setting.png)
 
 ## 功能概览
 
 ### 数据源
 
-支持 5 个数据源，可在配置中同时启用：
+支持 4 个数据源，可在配置中同时启用：
 
 | 数据源 | 数据类型 | query 字段支持 | 本地精筛 | CCF 过滤 | 跨源去重 |
 |--------|----------|:--------------:|:--------:|:--------:|:--------:|
 | `arxiv` | 预印本 | 完整 | — | — | ✅ |
 | `openalex` | 期刊 / 会议 / 预印本 | 部分 | ✅ | — | ✅ |
-| `pubmed` | 生物医学期刊 | 部分 | — | — | ✅ |
 | `dblp` | CCF 会议论文集 | 本地关键词匹配 | ✅ | ✅ | ✅ |
 | `openreview` | CCF 会议投稿 | 本地关键词匹配 | ✅ | ✅ | ✅ |
 
 > **openalex 注意**：结果稳定性尚在改善中，可能返回少量无关论文，如结果偏差明显建议暂时关闭。
->
-> **PubMed 使用提示**：偏向生物医学/生命科学领域；建议设置 `NCBI_API_KEY` 环境变量以提升速率上限。
 >
 > **dblp / openreview**：依赖 CCF 白名单（`ccf_enabled: true`），仅拉取 CCF A/B 级场馆的近期论文，再按关键词过滤。
 
@@ -134,7 +133,6 @@ cp .env.example .env
 - [🔍 查询内部逻辑说明](./docs/zh/architecture_search_logic.md)
 - [🔍 arXiv 查询语法说明](./docs/zh/source_arxiv_api_query.md)
 - [🔍 OpenAlex 查询语法说明](./docs/zh/source_openalex_api_query.md)
-- [🔍 PubMed 查询语法说明](./docs/zh/source_pubmed_api_query.md)
 
 ## 更新
 

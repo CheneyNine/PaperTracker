@@ -136,7 +136,7 @@ class CommandRunner:
                     self.config.dashboard,
                     dashboard_store,
                     query_config=DashboardQueryConfig(self.config_path),
-                    settings_config=DashboardSettingsConfig(self.config_path, Path(".env")),
+                    settings_config=DashboardSettingsConfig(self.config_path),
                     ccf_store=CCFVenueStore(Path(self.config.search.ccf_cache_path)),
                     refresh_callback=lambda progress_callback, theme_id, source_names: self._refresh_dashboard_data(
                         progress_callback=progress_callback,

@@ -5,7 +5,6 @@ Parses search configuration and converts query DSL payloads into validated struc
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -47,10 +46,6 @@ class SearchConfig:
     dblp_recent_years: int
     openreview_recent_years: int
     openreview_max_pages: int
-    ncbi_api_key_env: str
-    ncbi_api_key: str
-    ncbi_tool: str
-    ncbi_email: str
 
 
 def load_search(raw: Mapping[str, Any]) -> SearchConfig:
@@ -82,10 +77,6 @@ def load_search(raw: Mapping[str, Any]) -> SearchConfig:
         section.get("openalex_relevance_threshold")
     )
     ccf_ranks = _parse_ccf_ranks(section.get("ccf_ranks", ["A", "B"]))
-    ncbi_api_key_env = expect_str(section.get("ncbi_api_key_env", "NCBI_API_KEY"), "search.ncbi_api_key_env")
-    ncbi_api_key = os.getenv(ncbi_api_key_env, "").strip()
-    ncbi_tool = expect_str(section.get("ncbi_tool", "paper-tracker"), "search.ncbi_tool")
-    ncbi_email = expect_str(section.get("ncbi_email", ""), "search.ncbi_email")
     return SearchConfig(
         scope=scope,
         queries=queries,
@@ -122,10 +113,6 @@ def load_search(raw: Mapping[str, Any]) -> SearchConfig:
             "search.openreview_recent_years",
         ),
         openreview_max_pages=expect_int(section.get("openreview_max_pages", 3), "search.openreview_max_pages"),
-        ncbi_api_key_env=ncbi_api_key_env,
-        ncbi_api_key=ncbi_api_key,
-        ncbi_tool=ncbi_tool,
-        ncbi_email=ncbi_email,
     )
 
 

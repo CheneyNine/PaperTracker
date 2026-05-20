@@ -39,7 +39,6 @@ const SOURCE_LABELS = {
   openreview: "OpenReview",
   arxiv: "arXiv",
   openalex: "OpenAlex",
-  pubmed: "PubMed",
 };
 const TARGET_LANGUAGE_OPTIONS = [
   "Simplified Chinese",
@@ -720,10 +719,6 @@ function renderSettingsView() {
                 name="search_arxiv_interval"
                 value="${escapeHtml(String(search.arxiv_min_interval_seconds ?? 5))}"
               >
-            </label>
-            <label class="settings-field">
-              <span>${escapeHtml(search.ncbi_api_key_env || "NCBI_API_KEY")}${search.ncbi_api_key_set ? ' <small style="opacity:0.6">（已配置，留空保持不变）</small>' : ''}</span>
-              <input class="sidebar-input" type="text" name="search_ncbi_api_key" value="" placeholder="${search.ncbi_api_key_set ? '留空保持不变，或输入新 Key' : '可选，提升 PubMed 速率上限'}">
             </label>
           </div>
           <div class="settings-actions settings-actions-inline">
@@ -1518,7 +1513,6 @@ function buildSettingsPayload(form) {
       ccf_enabled: form.querySelector('input[name="search_ccf_enabled"]')?.checked === true,
       ccf_ranks: rankValues,
       arxiv_min_interval_seconds: Number(formData.get("search_arxiv_interval") || 5),
-      ncbi_api_key: String(formData.get("search_ncbi_api_key") || "").trim(),
     },
   };
 }
