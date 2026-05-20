@@ -49,6 +49,11 @@ const TARGET_LANGUAGE_OPTIONS = [
 ];
 const SOURCE_STORAGE_KEY = "paper-tracker-dashboard-sources";
 
+function autoGrow(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = textarea.scrollHeight + "px";
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -1409,6 +1414,10 @@ function initThemeActions() {
     if (action === "edit") {
       state.editingThemeId = themeId;
       renderLists();
+      const editTextarea = document.querySelector(`[data-theme-edit-description="${themeId}"]`);
+      if (editTextarea instanceof HTMLTextAreaElement) {
+        autoGrow(editTextarea);
+      }
       setThemeFeedback("请直接在当前主题卡片内修改内容，保存后会恢复成普通按钮。");
       return;
     }
@@ -1707,6 +1716,18 @@ document.addEventListener("DOMContentLoaded", () => {
   initSourceSelector();
   initPolling();
   setRefreshStatus(DEFAULT_REFRESH_STATUS);
+
+  const createDescriptionTextarea = document.getElementById("theme-description-input");
+  if (createDescriptionTextarea instanceof HTMLTextAreaElement) {
+    createDescriptionTextarea.addEventListener("input", () => autoGrow(createDescriptionTextarea));
+  }
+  document.addEventListener("input", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLTextAreaElement && target.dataset.themeEditDescription !== undefined) {
+      autoGrow(target);
+    }
+  });
+
   void fetchSnapshot();
   void fetchSettings();
 });

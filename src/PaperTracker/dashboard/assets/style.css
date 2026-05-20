@@ -169,7 +169,8 @@ select.sidebar-input {
 
 .sidebar-textarea {
   min-height: 96px;
-  resize: vertical;
+  resize: none;
+  overflow-y: hidden;
 }
 
 .sidebar-button,
