@@ -6,74 +6,74 @@
 [![Last Commit](https://img.shields.io/github/last-commit/CheneyNine/PaperTracker)](https://github.com/CheneyNine/PaperTracker/commits)
 [![Code Size](https://img.shields.io/github/languages/code-size/CheneyNine/PaperTracker)](https://github.com/CheneyNine/PaperTracker)
 
-**[English](./README.en.md) | 中文**
+**English | [中文](./README.zh.md)**
 
-Paper Tracker 是一个最小化的论文追踪工具，支持从 arXiv、OpenAlex、DBLP、OpenReview 多个来源检索论文，结合 CCF 等级过滤和 LLM 摘要增强，按配置输出结构化结果，便于持续追踪领域最新进展。
+Paper Tracker is a minimal paper tracking tool that queries multiple databases — arXiv, OpenAlex, DBLP, and OpenReview — filters results by CCF venue ranking, optionally enriches them with LLM summaries, and outputs structured results so you can continuously track the latest research in your field.
 
-**如果该项目对你有帮助，请麻烦点一个 Star ⭐，谢谢！**
+**If this project helps you, please consider giving it a Star ⭐. Thank you!**
 
-## 效果展示
+## Demo
 
-![Dashboard 预览](./docs/assets/preview_dashboard.png)
+![Dashboard Preview](./docs/assets/preview_dashboard.png)
 
-![设置页面预览](./docs/assets/preview_setting.png)
+![Settings Preview](./docs/assets/preview_setting.png)
 
-## 功能概览
+## Features
 
-### 数据源
+### Sources
 
-支持 4 个数据源，可在配置中同时启用：
+Four sources supported, all can be enabled simultaneously:
 
-| 数据源 | 数据类型 | query 字段支持 | 本地精筛 | CCF 过滤 | 跨源去重 |
-|--------|----------|:--------------:|:--------:|:--------:|:--------:|
-| `arxiv` | 预印本 | 完整 | — | — | ✅ |
-| `openalex` | 期刊 / 会议 / 预印本 | 部分 | ✅ | — | ✅ |
-| `dblp` | CCF 会议论文集 | 本地关键词匹配 | ✅ | ✅ | ✅ |
-| `openreview` | CCF 会议投稿 | 本地关键词匹配 | ✅ | ✅ | ✅ |
+| Source | Data Type | Query Field Support | Local Post-Filter | CCF Filter | Cross-Source Dedupe |
+|--------|-----------|:-------------------:|:-----------------:|:----------:|:-------------------:|
+| `arxiv` | Preprints | Full | — | — | ✅ |
+| `openalex` | Journals / Conferences / Preprints | Partial | ✅ | — | ✅ |
+| `dblp` | CCF venue proceedings | Local keyword match | ✅ | ✅ | ✅ |
+| `openreview` | CCF conference submissions | Local keyword match | ✅ | ✅ | ✅ |
 
-> **openalex 注意**：结果稳定性尚在改善中，可能返回少量无关论文，如结果偏差明显建议暂时关闭。
+> **openalex note**: Result quality is still improving — it may occasionally return off-topic papers. Disable if results are consistently noisy.
 >
-> **dblp / openreview**：依赖 CCF 白名单（`ccf_enabled: true`），仅拉取 CCF A/B 级会议/期刊的近期论文，再按关键词过滤。
+> **dblp / openreview**: Requires `ccf_enabled: true`. Only papers from CCF A/B venues are fetched, then filtered by your keywords.
 
-### 检索与过滤
+### Query and Filtering
 
-- 支持字段化检索：`TITLE`、`ABSTRACT`、`AUTHOR`、`JOURNAL`、`CATEGORY`
-- 支持逻辑操作：`AND`、`OR`、`NOT`
-- 支持全局 `scope`（对所有 queries 生效）
-- **CCF 等级白名单**：`ccf_enabled: true` 时，DBLP/OpenReview 仅收录指定等级（默认 A/B）的会议/期刊
+- Field-based search: `TITLE`, `ABSTRACT`, `AUTHOR`, `JOURNAL`, `CATEGORY`
+- Logical operators: `AND`, `OR`, `NOT`
+- Global `scope` applied across all queries
+- **CCF rank whitelist**: when `ccf_enabled: true`, DBLP/OpenReview only collects papers from venues at the specified ranks (default: A and B)
 
-### 拉取策略
+### Fetch Strategy
 
-- 严格时间窗口 + 补全回溯：优先拉取 `pull_every` 天内新论文，不足时向前回溯到 `max_lookback_days`
-- 多源结果聚合后执行跨源去重（基于 DOI / arXiv ID / 标题相似度）
+- Strict time window + backfill: fetches papers within `pull_every` days first, then looks further back (up to `max_lookback_days`) to reach the target count
+- Cross-source deduplication after aggregation (DOI / arXiv ID / title similarity)
 
-### 存储
+### Storage
 
-- SQLite 持久化去重，跨次运行不重复推送同一篇论文
-- 完整论文内容（标题、摘要、作者等）可选持久化
+- SQLite-backed deduplication — no repeated papers across runs
+- Full paper content (title, abstract, authors, etc.) optionally persisted
 
-### 输出
+### Output
 
-- 支持 `console`、`json`、`markdown`、`html` 格式
-- HTML 支持自定义模板
+- Formats: `console`, `json`, `markdown`, `html`
+- HTML supports custom templates
 
-### LLM 增强
+### LLM Enhancement
 
-- 支持 OpenAI-compatible 接口（OpenAI、DeepSeek、SiliconFlow 等）
-- 摘要翻译 + 结构化总结（TLDR / 动机 / 方法 / 结论）
-- 通过 `llm.target_lang` 指定输出语言（如 `Simplified Chinese`、`English`、`Japanese`）
+- OpenAI-compatible API (OpenAI, DeepSeek, SiliconFlow, etc.)
+- Abstract translation + structured summary (TLDR / motivation / method / conclusion)
+- Output language configurable via `llm.target_lang` (e.g. `Simplified Chinese`, `English`, `Japanese`)
 
-### 本地 Dashboard
+### Local Dashboard
 
-运行 `paper-tracker dashboard` 可启动本地 Web 界面（默认 `http://127.0.0.1:8765`），支持：
+Run `paper-tracker dashboard` to start a local web UI (default: `http://127.0.0.1:8765`) with:
 
-- 浏览、搜索已入库论文
-- 手动触发刷新
-- 在线配置 LLM 提供商与查询参数
+- Browse and search stored papers
+- Trigger manual refresh
+- Configure LLM provider and query parameters in-browser
 
-## 快速开始
+## Quick Start
 
-建议使用虚拟环境：
+A virtual environment is recommended:
 
 ```bash
 python3 -m venv .venv
@@ -82,76 +82,76 @@ source .venv/bin/activate      # macOS / Linux
 pip install -e .
 ```
 
-用内置示例配置直接运行：
+Run with the built-in example config:
 
 ```bash
 paper-tracker search --config config/example.yml
 ```
 
-启动本地 Dashboard：
+Start the local Dashboard:
 
 ```bash
 paper-tracker dashboard --config config/example.yml
-# 浏览器打开 http://127.0.0.1:8765
+# Open http://127.0.0.1:8765 in your browser
 ```
 
-## 自定义配置
+## Custom Configuration
 
 ```bash
 cp config/example.yml config/custom.yml
-# 按需修改 config/custom.yml
+# Edit config/custom.yml as needed
 paper-tracker search --config config/custom.yml
 ```
 
-**必填字段：**
+**Required fields:**
 
-- `queries`：至少设置一条查询
-- `llm.base_url` / `llm.model`：当 `llm.enabled: true` 时必须指定
+- `queries`: at least one query must be configured
+- `llm.base_url` / `llm.model`: required when `llm.enabled: true`
 
-### 启用 CCF 过滤（DBLP / OpenReview）
+### Enable CCF Filtering (DBLP / OpenReview)
 
 ```yaml
 search:
   sources: [arxiv, dblp, openreview]
   ccf_enabled: true
-  ccf_ranks: [A, B]          # 仅收录 CCF A/B 级会议/期刊
-  dblp_recent_years: 2       # 拉取近 N 年的 DBLP 论文集
+  ccf_ranks: [A, B]          # only collect CCF A/B venues
+  dblp_recent_years: 2       # fetch proceedings from the last N years
   openreview_recent_years: 2
 ```
 
-### 配置 LLM 环境变量（可选）
+### Configure LLM API Key (optional)
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入你的 LLM_API_KEY
+# Edit .env and fill in your LLM_API_KEY
 ```
 
-📚 详细文档：
+📚 Detailed docs:
 
-- [📖 使用指南](./docs/zh/guide_user.md)
-- [⚙️ 详细参数配置说明](./docs/zh/guide_configuration.md)
-- [🔍 查询内部逻辑说明](./docs/zh/architecture_search_logic.md)
-- [🔍 arXiv 查询语法说明](./docs/zh/source_arxiv_api_query.md)
-- [🔍 OpenAlex 查询语法说明](./docs/zh/source_openalex_api_query.md)
+- [📖 User Guide](./docs/en/guide_user.md)
+- [⚙️ Configuration Reference](./docs/en/guide_configuration.md)
+- [🔍 Search Logic Overview](./docs/en/architecture_search_logic.md)
+- [🔍 arXiv Query Syntax](./docs/en/source_arxiv_api_query.md)
+- [🔍 OpenAlex Query Parameters](./docs/en/source_openalex_api_query.md)
 
-## 更新
+## Update
 
 ```bash
 git pull
 pip install -e . --upgrade
 ```
 
-## 反馈
+## Feedback
 
-如遇到问题或有功能建议，欢迎在 [GitHub Issues](https://github.com/CheneyNine/PaperTracker/issues) 提交，请附上运行日志（默认在 `log/` 目录下）。
+For bugs or feature requests, open an issue at [GitHub Issues](https://github.com/CheneyNine/PaperTracker/issues). Please include the runtime log (default location: `log/`).
 
-## 许可证
+## License
 
-本项目使用 [MIT License](./LICENSE)。
+This project is licensed under the [MIT License](./LICENSE).
 
-## 致谢
+## Acknowledgments
 
-本项目参考了以下开源工作的功能思路：
+This project was inspired by the following open-source works:
 
 - [Arxiv-tracker](https://github.com/colorfulandcjy0806/Arxiv-tracker)
 - [daily-arXiv-ai-enhanced](https://github.com/dw-dengwei/daily-arXiv-ai-enhanced)
