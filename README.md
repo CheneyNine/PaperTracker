@@ -33,14 +33,14 @@ Paper Tracker 是一个最小化的论文追踪工具，支持从 arXiv、OpenAl
 
 > **openalex 注意**：结果稳定性尚在改善中，可能返回少量无关论文，如结果偏差明显建议暂时关闭。
 >
-> **dblp / openreview**：依赖 CCF 白名单（`ccf_enabled: true`），仅拉取 CCF A/B 级场馆的近期论文，再按关键词过滤。
+> **dblp / openreview**：依赖 CCF 白名单（`ccf_enabled: true`），仅拉取 CCF A/B 级会议/期刊的近期论文，再按关键词过滤。
 
 ### 检索与过滤
 
 - 支持字段化检索：`TITLE`、`ABSTRACT`、`AUTHOR`、`JOURNAL`、`CATEGORY`
 - 支持逻辑操作：`AND`、`OR`、`NOT`
 - 支持全局 `scope`（对所有 queries 生效）
-- **CCF 等级白名单**：`ccf_enabled: true` 时，DBLP/OpenReview 仅收录指定等级（默认 A/B）的场馆
+- **CCF 等级白名单**：`ccf_enabled: true` 时，DBLP/OpenReview 仅收录指定等级（默认 A/B）的会议/期刊
 
 ### 拉取策略
 
@@ -114,7 +114,7 @@ paper-tracker search --config config/custom.yml
 search:
   sources: [arxiv, dblp, openreview]
   ccf_enabled: true
-  ccf_ranks: [A, B]          # 仅收录 CCF A/B 级场馆
+  ccf_ranks: [A, B]          # 仅收录 CCF A/B 级会议/期刊
   dblp_recent_years: 2       # 拉取近 N 年的 DBLP 论文集
   openreview_recent_years: 2
 ```
