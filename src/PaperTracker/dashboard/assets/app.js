@@ -870,7 +870,6 @@ function renderLists() {
     : [];
   renderQueryDirectory(selectedBoardAllGroups);
   renderResearchThemes();
-  renderSettingsView();
   renderLlmDiscoveryFeedback();
   renderSourceSelector();
   renderCcfFeedback();
@@ -1050,6 +1049,7 @@ async function fetchSettings() {
       throw new Error(`HTTP ${response.status}`);
     }
     applySettings(await response.json());
+    renderSettingsView();
     renderLists();
   } catch (error) {
     console.error("Failed to fetch dashboard settings", error);
@@ -1071,6 +1071,7 @@ async function saveSettings(payload) {
   const data = await response.json();
   applySettings(data.settings || {});
   applySnapshot(data.snapshot || {});
+  renderSettingsView();
   renderLists();
 }
 
@@ -1493,6 +1494,7 @@ function initViewToggle() {
       void fetchSettings();
     }
     renderLists();
+    renderSettingsView();
   });
 }
 
@@ -1534,7 +1536,8 @@ function initSettingsActions() {
     const payload = buildSettingsPayload(target);
     state.settingsSaving = true;
     setSettingsFeedback("正在保存设置…");
-    renderSettingsView();
+    const submitBtn = target.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = "保存中…";
     try {
       await saveSettings(payload);
       setSettingsFeedback("设置已保存，后续更新会按新配置执行。");
