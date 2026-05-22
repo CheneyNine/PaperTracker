@@ -1,65 +1,76 @@
-"""arXiv-specific multi-round fetching strategy.
+"""arXiv fetching strategy using the arxiv library.
 
-Provides time-window filtering and optional fill mode to collect enough papers
-while preserving deterministic sorting and optional persistent deduplication.
+Provides time-window filtering and optional deduplication backed by the
+official arxiv Python library, which handles HTTP, pagination, and rate
+limiting internally.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+import re
 from datetime import datetime, timedelta, timezone
 from time import time
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
+
+import arxiv
+
+from PaperTracker.core.models import Paper, PaperLinks
 
 if TYPE_CHECKING:
     from PaperTracker.config import SearchConfig
-    from PaperTracker.core.models import Paper
     from PaperTracker.core.query import SearchQuery
     from PaperTracker.storage.deduplicate import SqliteDeduplicateStore
 
 logger = logging.getLogger(__name__)
 
-ARXIV_SORT_BY = "lastUpdatedDate"
-ARXIV_SORT_ORDER = "descending"
 TIMEOUT_SECONDS = 120
+_RE_VERSION = re.compile(r"v\d+$")
 
 
 def collect_papers_with_time_filter(
     query: SearchQuery,
     scope: SearchQuery | None,
     policy: SearchConfig,
-    fetch_page_func: Callable[[str, int, int, str, str], list[Paper]],
+    arxiv_client: arxiv.Client,
+    keep_version: bool,
     dedup_store: SqliteDeduplicateStore | None,
 ) -> list[Paper]:
-    """Collect papers with time filtering and optional source-local deduplication.
+    """Collect papers with time filtering and optional deduplication.
 
-    This arXiv-specific strategy uses fixed sorting (`lastUpdatedDate` +
-    `descending`) and always fetches by pages until stop conditions are met.
-    `fill_enabled` only affects whether non-strict-window papers can become
-    candidates; it does not control whether the next page is fetched.
+    Iterates the arxiv result generator (sorted by lastUpdatedDate descending)
+    and stops early once the target count is reached or the oldest seen paper
+    falls outside the active collection window.
 
     Args:
-        query: Query object for this fetch task.
+        query: Query for this fetch task.
         scope: Optional global scope merged into query compilation.
-        policy: Fetch policy limits and time window configuration.
-        fetch_page_func: Paged fetch callback with arXiv API parameters.
-        dedup_store: Optional deduplication store for paged fetch within arXiv.
+        policy: Fetch policy: limits, time window, fill mode.
+        arxiv_client: Configured arxiv.Client instance.
+        keep_version: Whether to keep the arXiv version suffix in paper IDs.
+        dedup_store: Optional persistent deduplication store.
 
     Returns:
-        Filtered and source-locally deduplicated papers sorted by timestamp descending,
-        capped at `policy.max_results`.
+        Filtered papers sorted by timestamp descending, capped at policy.max_results.
     """
     from PaperTracker.sources.arxiv.query import compile_search_query
 
-    candidate_count = 0
+    search_query_str = compile_search_query(query=query, scope=scope)
+    max_fetch = policy.max_fetch_items if policy.max_fetch_items != -1 else None
+
+    search = arxiv.Search(
+        query=search_query_str,
+        max_results=max_fetch,
+        sort_by=arxiv.SortCriterion.LastUpdatedDate,
+        sort_order=arxiv.SortOrder.Descending,
+    )
+
     new_items: list[Paper] = []
-    page_offset = 0
+    candidate_count = 0
     fetched_items = 0
     now = datetime.now(timezone.utc)
     start_time = time()
-
-    search_query_str = compile_search_query(query=query, scope=scope)
 
     logger.info(
         "Start collecting papers - query: '%s', target: %d",
@@ -67,11 +78,11 @@ def collect_papers_with_time_filter(
         policy.max_results,
     )
 
-    while policy.max_fetch_items == -1 or fetched_items < policy.max_fetch_items:
+    for result in arxiv_client.results(search):
         elapsed = time() - start_time
         if elapsed > TIMEOUT_SECONDS:
             logger.warning(
-                "Fetch timeout (%.1fs > %ds) - fetched %d items, %d candidates; stop",
+                "Fetch timeout (%.1fs > %ds) - fetched %d, candidates %d; stop",
                 elapsed,
                 TIMEOUT_SECONDS,
                 fetched_items,
@@ -79,112 +90,105 @@ def collect_papers_with_time_filter(
             )
             break
 
-        page_num = page_offset // policy.fetch_batch_size + 1
-        logger.info(
-            "Fetching arXiv page %d: offset=%d page_size=%d",
-            page_num,
-            page_offset,
-            policy.fetch_batch_size,
-        )
-        page = fetch_page_func(
-            search_query_str,
-            page_offset,
-            policy.fetch_batch_size,
-            ARXIV_SORT_BY,
-            ARXIV_SORT_ORDER,
-        )
-        if not page:
-            logger.info("No more upstream results at offset=%d; stop", page_offset)
-            break
+        fetched_items += 1
+        paper = _result_to_paper(result, keep_version=keep_version)
 
-        fetched_items += len(page)
-        logger.info("Fetched page %d: %d items (total %d)", page_num, len(page), fetched_items)
-        page_offset += policy.fetch_batch_size
-
-        page_candidates = []
-        for paper in page:
-            if _can_include(
-                paper,
-                pull_every_days=policy.pull_every,
-                fill_enabled=policy.fill_enabled,
-                max_lookback_days=policy.max_lookback_days,
-                now=now,
-            ):
-                page_candidates.append(paper)
-            elif _resolve_timestamp(paper) is None:
-                logger.debug("Skip paper without timestamp: %s", paper.id)
-
-        candidate_count += len(page_candidates)
-        logger.debug("Page candidates: %d (total candidates %d)", len(page_candidates), candidate_count)
-
-        if dedup_store:
-            page_new = dedup_store.filter_new_in_source("arxiv", page_candidates)
-            logger.info(
-                "Page dedup stats: %d new in total %d papers",
-                len(page_new),
-                len(page_candidates),
-            )
-            new_items.extend(page_new)
-        else:
-            new_items.extend(page_candidates)
-            logger.debug(
-                "Persistent deduplication is disabled - accepted %d papers (total %d)",
-                len(page_candidates),
-                len(new_items),
-            )
-
-        # Since upstream is sorted by lastUpdatedDate descending, once the
-        # oldest paper in the current page is already outside the effective
-        # window, all later pages will also be outside and can be skipped.
-        # This stop condition is independent from whether fill is enabled.
-        oldest_in_page = page[-1]
-        if _is_outside_collection_window(
-            oldest_in_page,
+        if _can_include(
+            paper,
             pull_every_days=policy.pull_every,
             fill_enabled=policy.fill_enabled,
             max_lookback_days=policy.max_lookback_days,
             now=now,
         ):
-            oldest_ts = _resolve_timestamp(oldest_in_page)
-            logger.info(
-                "Early stop - page oldest paper is outside collection window (%s); stop",
-                oldest_ts.isoformat() if oldest_ts else "unknown timestamp",
-            )
-            break
+            candidate_count += 1
+            if dedup_store:
+                new_items.extend(dedup_store.filter_new_in_source("arxiv", [paper]))
+            else:
+                new_items.append(paper)
 
-        # Stop immediately once deduplicated count reaches target.
-        if len(new_items) >= policy.max_results:
-            logger.info(
-                "Reached target after deduplication - new papers: %d (target %d); stop",
-                len(new_items),
-                policy.max_results,
-            )
-            break
+            if len(new_items) >= policy.max_results:
+                logger.info(
+                    "Reached target - new papers: %d (target %d); stop",
+                    len(new_items),
+                    policy.max_results,
+                )
+                break
 
-        if policy.max_fetch_items != -1 and fetched_items >= policy.max_fetch_items:
-            logger.info("Reached max_fetch_items=%d; stop", policy.max_fetch_items)
+        elif _is_outside_collection_window(
+            paper,
+            pull_every_days=policy.pull_every,
+            fill_enabled=policy.fill_enabled,
+            max_lookback_days=policy.max_lookback_days,
+            now=now,
+        ):
+            ts = paper.updated or paper.published
+            logger.info(
+                "Early stop - paper outside collection window (%s); stop",
+                ts.isoformat() if ts else "unknown",
+            )
             break
 
     new_items.sort(
-        key=lambda paper: (
-            paper.updated or paper.published or datetime.min.replace(tzinfo=timezone.utc)
-        ),
+        key=lambda p: p.updated or p.published or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
-    result = new_items[: policy.max_results]
+    result_list = new_items[: policy.max_results]
 
-    if len(result) < policy.max_results:
+    if len(result_list) < policy.max_results:
         logger.warning(
             "Target not reached - target: %d, actual: %d (candidates %d, after dedup %d)",
             policy.max_results,
-            len(result),
+            len(result_list),
             candidate_count,
             len(new_items),
         )
     else:
-        logger.info("Collection done - returning %d papers", len(result))
+        logger.info("Collection done - returning %d papers", len(result_list))
 
-    return result
+    return result_list
+
+
+def _result_to_paper(result: arxiv.Result, *, keep_version: bool) -> Paper:
+    """Convert an arxiv.Result to the internal Paper model."""
+    paper_id = _normalize_arxiv_id(result.entry_id, keep_version=keep_version)
+    return Paper(
+        source="arxiv",
+        id=paper_id,
+        title=result.title.replace("\n", " ").strip(),
+        authors=[author.name for author in result.authors],
+        abstract=result.summary or "",
+        published=result.published,
+        updated=result.updated,
+        primary_category=result.primary_category or None,
+        categories=list(result.categories),
+        links=PaperLinks(abstract=result.entry_id, pdf=result.pdf_url),
+        doi=result.doi or None,
+        extra={"work_type": "preprint"},
+    )
+
+
+def _normalize_arxiv_id(raw_id: str, *, keep_version: bool) -> str:
+    """Normalize an arXiv entry_id URL to a bare paper ID."""
+    if not raw_id:
+        return ""
+    value = raw_id.strip()
+    if "arxiv.org" in value:
+        parsed = urlparse(value)
+        path = parsed.path or ""
+        if "/abs/" in path:
+            value = path.split("/abs/", 1)[1]
+        elif "/pdf/" in path:
+            value = path.split("/pdf/", 1)[1]
+        else:
+            value = path.lstrip("/")
+        if value.endswith(".pdf"):
+            value = value[:-4]
+    value = value.strip("/")
+    if not value:
+        return raw_id
+    if not keep_version:
+        value = _RE_VERSION.sub("", value)
+    return value
 
 
 def _can_include(
@@ -195,18 +199,6 @@ def _can_include(
     max_lookback_days: int,
     now: datetime,
 ) -> bool:
-    """Decide whether a paper can enter the candidate set.
-
-    Args:
-        paper: Paper to evaluate.
-        pull_every_days: Strict window size in days.
-        fill_enabled: Whether fill mode is enabled.
-        max_lookback_days: Maximum lookback in fill mode; `-1` means unlimited.
-        now: Current UTC timestamp.
-
-    Returns:
-        True when the paper should be included; otherwise False.
-    """
     if _is_in_strict_window(paper, pull_every_days, now):
         return True
     if fill_enabled and _is_in_fill_window(paper, max_lookback_days, now):
@@ -222,19 +214,7 @@ def _is_outside_collection_window(
     max_lookback_days: int,
     now: datetime,
 ) -> bool:
-    """Check whether a paper is outside the active collection window.
-
-    Args:
-        paper: Paper to evaluate.
-        pull_every_days: Strict window size in days.
-        fill_enabled: Whether fill mode is enabled.
-        max_lookback_days: Fill lookback size in days; `-1` means unlimited.
-        now: Current UTC timestamp.
-
-    Returns:
-        True when paper timestamp is older than the active window cutoff.
-    """
-    timestamp = _resolve_timestamp(paper)
+    timestamp = paper.updated or paper.published
     if timestamp is None:
         return False
     if fill_enabled:
@@ -245,49 +225,16 @@ def _is_outside_collection_window(
 
 
 def _is_in_strict_window(paper: Paper, pull_every_days: int, now: datetime) -> bool:
-    """Check whether a paper is inside the strict time window.
-
-    Args:
-        paper: Paper to evaluate.
-        pull_every_days: Strict window size in days.
-        now: Current UTC timestamp.
-
-    Returns:
-        True when paper timestamp is newer than strict cutoff.
-    """
-    timestamp = _resolve_timestamp(paper)
+    timestamp = paper.updated or paper.published
     if timestamp is None:
         return False
     return timestamp >= now - timedelta(days=pull_every_days)
 
 
 def _is_in_fill_window(paper: Paper, max_lookback_days: int, now: datetime) -> bool:
-    """Check whether a paper is inside the fill time window.
-
-    Args:
-        paper: Paper to evaluate.
-        max_lookback_days: Fill lookback size in days; `-1` means unlimited.
-        now: Current UTC timestamp.
-
-    Returns:
-        True when fill-window constraint is satisfied.
-    """
-    timestamp = _resolve_timestamp(paper)
+    timestamp = paper.updated or paper.published
     if timestamp is None:
         return False
     if max_lookback_days == -1:
         return True
     return timestamp >= now - timedelta(days=max_lookback_days)
-
-
-def _resolve_timestamp(paper: Paper) -> datetime | None:
-    """Resolve primary timestamp for sorting/filtering.
-
-    Args:
-        paper: Paper entity.
-
-    Returns:
-        `updated` when available, otherwise `published`; returns None when both
-        are missing.
-    """
-    return paper.updated or paper.published

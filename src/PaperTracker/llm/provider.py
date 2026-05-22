@@ -69,7 +69,8 @@ class LLMProvider(Protocol):
         *,
         theme_name: str,
         theme_description: str,
+        existing_queries: list[str] | None = None,
         target_lang: str = "Simplified Chinese",
-    ) -> list[str]:
-        """Suggest search queries for one user-defined research theme."""
+    ) -> dict[str, list]:
+        """Suggest and optimize search queries for one user-defined research theme."""
         raise NotImplementedError

@@ -15,14 +15,10 @@ from PaperTracker.sources.arxiv.source import _supports_arxiv_query, ArxivSource
 
 
 class _DummyClient:
-    def __init__(self, cooldown_seconds: float = 0.0) -> None:
-        self._cooldown_seconds = cooldown_seconds
+    """Stand-in for arxiv.Client; actual calls are mocked out in tests."""
 
-    def current_cooldown_seconds(self) -> float:
-        return self._cooldown_seconds
-
-    def close(self) -> None:
-        return None
+    def results(self, search):
+        return iter([])
 
 
 class _DummySearchConfig:
@@ -58,19 +54,19 @@ class TestArxivSource(unittest.TestCase):
         self.assertEqual(result, [])
         collect_mock.assert_not_called()
 
-    def test_search_skips_arxiv_when_client_cooldown_is_active(self) -> None:
+    def test_search_calls_collect_for_english_query(self) -> None:
         source = ArxivSource(
-            client=_DummyClient(cooldown_seconds=30.0),
+            client=_DummyClient(),
             search_config=_DummySearchConfig(),
         )
         query = SearchQuery(
             name="spatio temporal qa dataset",
             fields={"TEXT": FieldQuery(OR=("spatio-temporal question answering",))},
         )
-        with patch("PaperTracker.sources.arxiv.source.collect_papers_with_time_filter") as collect_mock:
+        with patch("PaperTracker.sources.arxiv.source.collect_papers_with_time_filter", return_value=[]) as collect_mock:
             result = source.search(query, max_results=5)
         self.assertEqual(result, [])
-        collect_mock.assert_not_called()
+        collect_mock.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -224,36 +224,55 @@ Rules:
         *,
         theme_name: str,
         theme_description: str,
+        existing_queries: list[str] | None = None,
         target_lang: str = "Simplified Chinese",
-    ) -> list[str]:
-        """Suggest related search queries for one research theme."""
+    ) -> dict[str, list]:
+        """Suggest and optimize search queries for one research theme."""
         system_prompt = (
             "You are an academic literature search assistant. "
             "Design concise search queries that are likely to retrieve relevant papers. "
             "Use English search phrases only."
         )
 
-        user_prompt = f"""Please generate search keywords for the following research theme.
+        existing_section = ""
+        if existing_queries:
+            lines = "\n".join(f"- {q}" for q in existing_queries)
+            existing_section = f"""
+Existing search keywords:
+{lines}
+
+Your task:
+1. Review the existing keywords. If any are overly long or specific (unlikely to match real paper titles/abstracts), provide a shorter and more effective replacement.
+2. Generate 4 to 6 NEW search phrases not already covered by the existing keywords.
+"""
+        else:
+            existing_section = """
+Your task:
+1. Generate 6 to 8 new search phrases for this research theme.
+"""
+
+        user_prompt = f"""You are helping a researcher track papers for the following research theme.
 
 Research theme name:
 {theme_name}
 
 Research theme description:
 {theme_description}
-
-Return ONLY a JSON object in {target_lang} with this exact structure:
+{existing_section}
+Return ONLY a JSON object with this exact structure:
 {{
-  "queries": [
-    "query 1",
-    "query 2"
+  "new_queries": ["new query 1", "new query 2"],
+  "optimized_queries": [
+    {{"from": "old overly-specific phrase", "to": "shorter better phrase"}}
   ]
 }}
 
 Rules:
-- Return 6 to 8 query phrases.
-- Each query should be short and suitable for academic search.
-- Use English only. Do not output Chinese keywords.
-- Avoid numbering, explanations, or any text outside the JSON."""
+- Use English only. No Chinese keywords.
+- Each query should be short (1-5 words) and suitable for academic search.
+- Only include entries in "optimized_queries" if an existing keyword genuinely needs improvement.
+- "optimized_queries" may be an empty list if all existing keywords are already good.
+- Do not include any text outside the JSON."""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -268,20 +287,36 @@ Rules:
         )
 
         data = extract_json(response_text)
-        raw_queries = data.get("queries", [])
-        if not isinstance(raw_queries, list):
-            return []
-        queries: list[str] = []
-        seen: set[str] = set()
-        for item in raw_queries:
-            if not isinstance(item, str):
-                continue
-            normalized = " ".join(item.split())
-            if not normalized:
-                continue
-            key = normalized.casefold()
-            if key in seen:
-                continue
-            seen.add(key)
-            queries.append(normalized)
-        return queries
+
+        def _clean_list(raw: object) -> list[str]:
+            if not isinstance(raw, list):
+                return []
+            result: list[str] = []
+            seen: set[str] = set()
+            for item in raw:
+                if not isinstance(item, str):
+                    continue
+                normalized = " ".join(item.split())
+                if not normalized:
+                    continue
+                key = normalized.casefold()
+                if key in seen:
+                    continue
+                seen.add(key)
+                result.append(normalized)
+            return result
+
+        new_queries = _clean_list(data.get("new_queries", []))
+
+        raw_optimized = data.get("optimized_queries", [])
+        optimized_queries: list[dict[str, str]] = []
+        if isinstance(raw_optimized, list):
+            for entry in raw_optimized:
+                if not isinstance(entry, dict):
+                    continue
+                from_val = " ".join(str(entry.get("from", "")).split())
+                to_val = " ".join(str(entry.get("to", "")).split())
+                if from_val and to_val and from_val.casefold() != to_val.casefold():
+                    optimized_queries.append({"from": from_val, "to": to_val})
+
+        return {"new_queries": new_queries, "optimized_queries": optimized_queries}

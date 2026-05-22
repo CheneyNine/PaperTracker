@@ -66,12 +66,14 @@ def _source_builders() -> dict[str, SourceBuilder]:
 
 def _build_arxiv_source(config: AppConfig, dedup_store: SqliteDeduplicateStore | None) -> PaperSource:
     """Build arXiv source."""
-    from PaperTracker.sources.arxiv.client import ArxivApiClient
+    import arxiv
     from PaperTracker.sources.arxiv.source import ArxivSource
 
     return ArxivSource(
-        client=ArxivApiClient(
-            min_interval_seconds=config.search.arxiv_min_interval_seconds,
+        client=arxiv.Client(
+            page_size=config.search.fetch_batch_size,
+            delay_seconds=config.search.arxiv_min_interval_seconds,
+            num_retries=5,
         ),
         scope=config.search.scope,
         keep_version=config.storage.keep_arxiv_version,
@@ -86,11 +88,9 @@ def _build_dblp_source(config: AppConfig, dedup_store: SqliteDeduplicateStore | 
     from pathlib import Path
 
     from PaperTracker.ccf import CCFVenueStore
-    from PaperTracker.sources.dblp.client import DBLPVenueClient
     from PaperTracker.sources.dblp.source import DBLPSource
 
     return DBLPSource(
-        client=DBLPVenueClient(),
         venue_store=CCFVenueStore(Path(config.search.ccf_cache_path)),
         search_config=config.search,
         scope=config.search.scope,
@@ -103,11 +103,9 @@ def _build_openreview_source(config: AppConfig, dedup_store: SqliteDeduplicateSt
     from pathlib import Path
 
     from PaperTracker.ccf import CCFVenueStore
-    from PaperTracker.sources.openreview.client import OpenReviewHtmlClient
     from PaperTracker.sources.openreview.source import OpenReviewSource
 
     return OpenReviewSource(
-        client=OpenReviewHtmlClient(),
         venue_store=CCFVenueStore(Path(config.search.ccf_cache_path)),
         search_config=config.search,
         scope=config.search.scope,

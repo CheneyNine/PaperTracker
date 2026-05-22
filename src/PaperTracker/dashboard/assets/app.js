@@ -1135,6 +1135,7 @@ async function suggestQueries() {
   return {
     suggested: Array.isArray(data.suggested_queries) ? data.suggested_queries : [],
     added: Array.isArray(data.added_queries) ? data.added_queries : [],
+    optimized: Array.isArray(data.optimized_queries) ? data.optimized_queries : [],
   };
 }
 
@@ -1309,10 +1310,18 @@ function initQueryActions() {
       suggestButton.setAttribute("disabled", "disabled");
       try {
         const result = await suggestQueries();
+        const parts = [];
         if (result.added.length) {
-          setQueryFeedback(`AI 已生成并加入 ${result.added.length} 个关键词：${result.added.join("；")}`);
+          parts.push(`新增 ${result.added.length} 个关键词：${result.added.join("；")}`);
+        }
+        if (result.optimized.length) {
+          const optDesc = result.optimized.map((o) => `"${o.from}" → "${o.to}"`).join("；");
+          parts.push(`优化 ${result.optimized.length} 个关键词：${optDesc}`);
+        }
+        if (parts.length) {
+          setQueryFeedback(`AI 已完成：${parts.join("；")}`);
         } else if (result.suggested.length) {
-          setQueryFeedback("AI 已生成关键词，但这些词当前都已存在于目录中。");
+          setQueryFeedback("AI 已分析关键词，当前所有生成词已存在，无需新增。");
         } else {
           setQueryFeedback("AI 这次没有生成可用关键词，可以稍后再试。", true);
         }
@@ -1543,6 +1552,11 @@ function initSettingsActions() {
     if (submitBtn) submitBtn.textContent = "保存中…";
     try {
       await saveSettings(payload);
+      const newSources = Array.isArray(payload.search?.sources) ? payload.search.sources : [];
+      if (newSources.length) {
+        state.selectedRefreshSources = newSources;
+        persistRefreshSources(newSources);
+      }
       setSettingsFeedback("设置已保存，后续更新会按新配置执行。");
     } catch (error) {
       console.error("Failed to save dashboard settings", error);

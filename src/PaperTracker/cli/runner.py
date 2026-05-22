@@ -280,14 +280,16 @@ class CommandRunner:
         theme_id: int,
         dashboard_store: DashboardStore,
         llm_service,
-    ) -> list[str]:
-        """Generate AI keyword suggestions for one research theme."""
+    ) -> dict[str, list]:
+        """Generate and optimize AI keyword suggestions for one research theme."""
         if llm_service is None:
             raise click.ClickException("LLM is not available for keyword suggestions")
         theme = dashboard_store.get_research_theme(theme_id)
         if theme is None:
             raise click.ClickException("Selected research theme was not found")
+        existing_queries = list(dashboard_store.list_theme_query_labels(theme_id))
         return llm_service.generate_theme_query_suggestions(
             theme_name=theme.name,
             theme_description=theme.description,
+            existing_queries=existing_queries,
         )

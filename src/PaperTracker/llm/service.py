@@ -184,31 +184,47 @@ class LLMService:
         *,
         theme_name: str,
         theme_description: str,
-    ) -> list[str]:
-        """Generate search query suggestions for one research theme."""
+        existing_queries: list[str] | None = None,
+    ) -> dict[str, list]:
+        """Generate and optimize search query suggestions for one research theme."""
         if not self.enabled:
-            return []
-        suggestions = self.provider.suggest_theme_queries(
+            return {"new_queries": [], "optimized_queries": []}
+        raw = self.provider.suggest_theme_queries(
             theme_name=theme_name,
             theme_description=theme_description,
+            existing_queries=existing_queries,
             target_lang=self.target_lang,
         )
-        results: list[str] = []
-        seen: set[str] = set()
-        for item in suggestions:
-            normalized = " ".join(str(item).split())
-            if not normalized:
+
+        def _is_valid_english(text: str) -> bool:
+            return bool(_ASCII_LETTER_RE.search(text)) and not bool(_CJK_RE.search(text))
+
+        def _clean_phrases(items: list) -> list[str]:
+            results: list[str] = []
+            seen: set[str] = set()
+            for item in items:
+                normalized = " ".join(str(item).split())
+                if not normalized or not _is_valid_english(normalized):
+                    continue
+                key = normalized.casefold()
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(normalized)
+            return results
+
+        new_queries = _clean_phrases(raw.get("new_queries", []))
+
+        optimized_queries: list[dict[str, str]] = []
+        for entry in raw.get("optimized_queries", []):
+            if not isinstance(entry, dict):
                 continue
-            if _CJK_RE.search(normalized):
-                continue
-            if not _ASCII_LETTER_RE.search(normalized):
-                continue
-            key = normalized.casefold()
-            if key in seen:
-                continue
-            seen.add(key)
-            results.append(normalized)
-        return results
+            from_val = " ".join(str(entry.get("from", "")).split())
+            to_val = " ".join(str(entry.get("to", "")).split())
+            if from_val and to_val and _is_valid_english(to_val):
+                optimized_queries.append({"from": from_val, "to": to_val})
+
+        return {"new_queries": new_queries, "optimized_queries": optimized_queries}
 
     def _generate_single(self, paper: Paper) -> LLMGeneratedInfo | None:
         """Generate LLM enrichment for a single paper.

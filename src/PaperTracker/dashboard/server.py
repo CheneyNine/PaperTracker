@@ -39,7 +39,7 @@ def run_dashboard_server(
         [Callable[[str, dict[str, object]], None], int | None, tuple[str, ...] | None],
         None,
     ] | None = None,
-    suggest_queries_callback: Callable[[int], list[str]] | None = None,
+    suggest_queries_callback: Callable[[int], dict] | None = None,
 ) -> None:
     """Start the local dashboard HTTP server.
 
@@ -77,7 +77,7 @@ def _build_handler(
         [Callable[[str, dict[str, object]], None], int | None, tuple[str, ...] | None],
         None,
     ] | None,
-    suggest_queries_callback: Callable[[int], list[str]] | None,
+    suggest_queries_callback: Callable[[int], dict] | None,
 ) -> type[BaseHTTPRequestHandler]:
     """Build a request handler bound to config and store."""
     refresh_lock = threading.Lock()
@@ -266,7 +266,7 @@ def _build_handler(
             self._write_json(status)
 
         def _handle_query_suggestions(self) -> None:
-            """Generate AI keyword suggestions for one research theme."""
+            """Generate and optimize AI keyword suggestions for one research theme."""
             if suggest_queries_callback is None:
                 self.send_error(HTTPStatus.NOT_IMPLEMENTED, "query suggestions are unavailable")
                 return
@@ -276,13 +276,17 @@ def _build_handler(
                 self.send_error(HTTPStatus.BAD_REQUEST, "theme_id is required")
                 return
             try:
-                suggestions = suggest_queries_callback(theme_id)
+                result = suggest_queries_callback(theme_id)
             except Exception as error:
                 self._write_json({"error": str(error)}, status=HTTPStatus.BAD_GATEWAY)
                 return
+
+            new_queries: list[str] = result.get("new_queries", [])
+            optimized_queries: list[dict] = result.get("optimized_queries", [])
+
             added: list[str] = []
             existing = {label.casefold() for label in query_config.list_labels()}
-            for label in suggestions:
+            for label in new_queries:
                 normalized = " ".join(label.split())
                 if not normalized or normalized.casefold() in existing:
                     continue
@@ -290,10 +294,30 @@ def _build_handler(
                 store.add_theme_query(theme_id, normalized)
                 existing.add(normalized.casefold())
                 added.append(normalized)
+
+            optimized: list[dict[str, str]] = []
+            for entry in optimized_queries:
+                from_label = " ".join(str(entry.get("from", "")).split())
+                to_label = " ".join(str(entry.get("to", "")).split())
+                if not from_label or not to_label:
+                    continue
+                if from_label.casefold() not in existing:
+                    continue
+                if to_label.casefold() in existing:
+                    continue
+                query_config.delete_query(from_label)
+                store.delete_theme_query(theme_id, from_label)
+                existing.discard(from_label.casefold())
+                query_config.add_query(to_label)
+                store.add_theme_query(theme_id, to_label)
+                existing.add(to_label.casefold())
+                optimized.append({"from": from_label, "to": to_label})
+
             self._write_json(
                 {
-                    "suggested_queries": suggestions,
+                    "suggested_queries": new_queries,
                     "added_queries": added,
+                    "optimized_queries": optimized,
                     "snapshot": _build_snapshot_payload(),
                 }
             )
