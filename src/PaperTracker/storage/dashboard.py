@@ -81,7 +81,7 @@ class DashboardPaperRecord:
 
 @dataclass(frozen=True, slots=True)
 class ResearchThemeRecord:
-    """User-defined research theme stored in SQLite."""
+    """User-defined research theme stored in the database."""
 
     id: int
     name: str
@@ -103,15 +103,10 @@ class ResearchThemeRecord:
 
 
 class DashboardStore:
-    """SQLite-backed store for dashboard listing and archive actions."""
+    """Database-backed store for dashboard listing and archive actions."""
 
     def __init__(self, db_manager: DatabaseManager) -> None:
-        """Initialize dashboard store.
-
-        Args:
-            db_manager: Shared database manager instance.
-        """
-        self.conn = db_manager.get_connection()
+        self.db_manager = db_manager
         self._theme_queries_ready = False
 
     def list_active_papers(self) -> list[DashboardPaperRecord]:
@@ -124,15 +119,13 @@ class DashboardStore:
 
     def archive_paper(self, source: str, source_id: str) -> None:
         """Mark a paper as archived."""
-        self.conn.execute(
-            """
-            UPDATE seen_papers
-            SET archived_at = CAST(strftime('%s','now') AS INTEGER)
-            WHERE source = ? AND source_id = ?
-            """,
-            (source, source_id),
-        )
-        self.conn.commit()
+        now = int(datetime.now().timestamp())
+        with self.db_manager.connection() as conn:
+            conn.execute(
+                "UPDATE seen_papers SET archived_at = ? WHERE source = ? AND source_id = ?",
+                (now, source, source_id),
+            )
+            conn.commit()
 
     def archive_active_papers_for_query(self, query_label: str) -> int:
         """Archive currently active papers that belong to one query label."""
@@ -162,15 +155,12 @@ class DashboardStore:
 
     def restore_paper(self, source: str, source_id: str) -> None:
         """Remove archive state from a paper."""
-        self.conn.execute(
-            """
-            UPDATE seen_papers
-            SET archived_at = NULL
-            WHERE source = ? AND source_id = ?
-            """,
-            (source, source_id),
-        )
-        self.conn.commit()
+        with self.db_manager.connection() as conn:
+            conn.execute(
+                "UPDATE seen_papers SET archived_at = NULL WHERE source = ? AND source_id = ?",
+                (source, source_id),
+            )
+            conn.commit()
 
     def get_snapshot(self) -> dict[str, Any]:
         """Build one dashboard snapshot payload."""
@@ -190,16 +180,17 @@ class DashboardStore:
     def list_theme_query_labels(self, theme_id: int) -> list[str]:
         """List query labels assigned to one research theme."""
         self.ensure_theme_queries_table()
-        cursor = self.conn.execute(
-            """
-            SELECT label
-            FROM theme_queries
-            WHERE research_theme_id = ?
-            ORDER BY position ASC, id ASC
-            """,
-            (theme_id,),
-        )
-        return [str(row[0]) for row in cursor.fetchall() if isinstance(row[0], str) and row[0].strip()]
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT label
+                FROM theme_queries
+                WHERE research_theme_id = ?
+                ORDER BY position ASC, id ASC
+                """,
+                (theme_id,),
+            )
+            return [str(row[0]) for row in cursor.fetchall() if isinstance(row[0], str) and row[0].strip()]
 
     def add_theme_query(self, theme_id: int, label: str) -> None:
         """Attach one query label to one research theme."""
@@ -207,81 +198,84 @@ class DashboardStore:
         normalized = " ".join(label.split())
         if not normalized:
             return
-        existing = {item.casefold() for item in self.list_theme_query_labels(theme_id)}
-        if normalized.casefold() in existing:
-            return
-        row = self.conn.execute(
-            "SELECT COALESCE(MAX(position), -1) + 1 FROM theme_queries WHERE research_theme_id = ?",
-            (theme_id,),
-        ).fetchone()
-        next_position = int(row[0]) if row is not None else 0
-        self.conn.execute(
-            """
-            INSERT INTO theme_queries (research_theme_id, label, position)
-            VALUES (?, ?, ?)
-            """,
-            (theme_id, normalized, next_position),
-        )
-        self.conn.commit()
+        with self.db_manager.connection() as conn:
+            existing_rows = conn.execute(
+                "SELECT label FROM theme_queries WHERE research_theme_id = ? ORDER BY position ASC, id ASC",
+                (theme_id,),
+            ).fetchall()
+            existing = {str(row[0]).casefold() for row in existing_rows if isinstance(row[0], str) and row[0].strip()}
+            if normalized.casefold() in existing:
+                return
+            row = conn.execute(
+                "SELECT COALESCE(MAX(position), -1) + 1 FROM theme_queries WHERE research_theme_id = ?",
+                (theme_id,),
+            ).fetchone()
+            next_position = int(row[0]) if row is not None else 0
+            conn.execute(
+                "INSERT INTO theme_queries (research_theme_id, label, position) VALUES (?, ?, ?)",
+                (theme_id, normalized, next_position),
+            )
+            conn.commit()
 
     def delete_theme_query(self, theme_id: int, label: str) -> None:
         """Remove one query label from one research theme."""
         self.ensure_theme_queries_table()
-        self.conn.execute(
-            """
-            DELETE FROM theme_queries
-            WHERE research_theme_id = ? AND lower(label) = lower(?)
-            """,
-            (theme_id, label.strip()),
-        )
-        self.conn.commit()
+        with self.db_manager.connection() as conn:
+            conn.execute(
+                "DELETE FROM theme_queries WHERE research_theme_id = ? AND lower(label) = lower(?)",
+                (theme_id, label.strip()),
+            )
+            conn.commit()
 
     def update_research_theme(self, theme_id: int, name: str, description: str) -> None:
         """Update one research theme title and description."""
         timestamp = int(datetime.now().timestamp())
-        self.conn.execute(
-            """
-            UPDATE research_themes
-            SET name = ?, description = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (name.strip(), description.strip(), timestamp, theme_id),
-        )
-        self.conn.commit()
+        with self.db_manager.connection() as conn:
+            conn.execute(
+                """
+                UPDATE research_themes
+                SET name = ?, description = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (name.strip(), description.strip(), timestamp, theme_id),
+            )
+            conn.commit()
 
     def list_research_themes(self) -> list[ResearchThemeRecord]:
         """List all research themes ordered by active state then recency."""
-        cursor = self.conn.execute(
-            """
-            SELECT id, name, description, is_active, created_at, updated_at
-            FROM research_themes
-            ORDER BY is_active DESC, updated_at DESC, id DESC
-            """
-        )
-        return [
-            ResearchThemeRecord(
-                id=int(row[0]),
-                name=str(row[1]),
-                description=str(row[2]),
-                is_active=bool(row[3]),
-                created_at=int(row[4]),
-                updated_at=int(row[5]),
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, description, is_active, created_at, updated_at
+                FROM research_themes
+                ORDER BY is_active DESC, updated_at DESC, id DESC
+                """
             )
-            for row in cursor.fetchall()
-        ]
+            return [
+                ResearchThemeRecord(
+                    id=int(row[0]),
+                    name=str(row[1]),
+                    description=str(row[2]),
+                    is_active=bool(row[3]),
+                    created_at=int(row[4]),
+                    updated_at=int(row[5]),
+                )
+                for row in cursor.fetchall()
+            ]
 
     def get_active_research_theme(self) -> ResearchThemeRecord | None:
         """Return the currently active research theme."""
-        cursor = self.conn.execute(
-            """
-            SELECT id, name, description, is_active, created_at, updated_at
-            FROM research_themes
-            WHERE is_active = 1
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """
-        )
-        row = cursor.fetchone()
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, description, is_active, created_at, updated_at
+                FROM research_themes
+                WHERE is_active = 1
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """
+            )
+            row = cursor.fetchone()
         if row is None:
             return None
         return ResearchThemeRecord(
@@ -295,16 +289,17 @@ class DashboardStore:
 
     def get_research_theme(self, theme_id: int) -> ResearchThemeRecord | None:
         """Return one research theme by id."""
-        cursor = self.conn.execute(
-            """
-            SELECT id, name, description, is_active, created_at, updated_at
-            FROM research_themes
-            WHERE id = ?
-            LIMIT 1
-            """,
-            (theme_id,),
-        )
-        row = cursor.fetchone()
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, description, is_active, created_at, updated_at
+                FROM research_themes
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (theme_id,),
+            )
+            row = cursor.fetchone()
         if row is None:
             return None
         return ResearchThemeRecord(
@@ -319,16 +314,31 @@ class DashboardStore:
     def create_research_theme(self, name: str, description: str) -> ResearchThemeRecord:
         """Create a new enabled theme without affecting existing theme boards."""
         timestamp = int(datetime.now().timestamp())
-        cursor = self.conn.execute(
-            """
-            INSERT INTO research_themes (name, description, is_active, created_at, updated_at)
-            VALUES (?, ?, 1, ?, ?)
-            """,
-            (name.strip(), description.strip(), timestamp, timestamp),
-        )
-        self.conn.commit()
+        is_postgres = getattr(self.db_manager, "db_type", "sqlite") == "postgres"
+
+        with self.db_manager.connection() as conn:
+            if is_postgres:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO research_themes (name, description, is_active, created_at, updated_at)
+                    VALUES (?, ?, 1, ?, ?) RETURNING id
+                    """,
+                    (name.strip(), description.strip(), timestamp, timestamp),
+                )
+                new_id = int(cursor.fetchone()[0])
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO research_themes (name, description, is_active, created_at, updated_at)
+                    VALUES (?, ?, 1, ?, ?)
+                    """,
+                    (name.strip(), description.strip(), timestamp, timestamp),
+                )
+                new_id = int(cursor.lastrowid)
+            conn.commit()
+
         return ResearchThemeRecord(
-            id=int(cursor.lastrowid),
+            id=new_id,
             name=name.strip(),
             description=description.strip(),
             is_active=True,
@@ -339,21 +349,18 @@ class DashboardStore:
     def set_active_research_theme(self, theme_id: int) -> None:
         """Enable one theme board without disabling other theme boards."""
         timestamp = int(datetime.now().timestamp())
-        self.conn.execute(
-            """
-            UPDATE research_themes
-            SET is_active = 1,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (timestamp, theme_id),
-        )
-        self.conn.commit()
+        with self.db_manager.connection() as conn:
+            conn.execute(
+                "UPDATE research_themes SET is_active = 1, updated_at = ? WHERE id = ?",
+                (timestamp, theme_id),
+            )
+            conn.commit()
 
     def delete_research_theme(self, theme_id: int) -> None:
         """Delete one theme and its contribution rows."""
-        self.conn.execute("DELETE FROM research_themes WHERE id = ?", (theme_id,))
-        self.conn.commit()
+        with self.db_manager.connection() as conn:
+            conn.execute("DELETE FROM research_themes WHERE id = ?", (theme_id,))
+            conn.commit()
 
     def list_active_papers_missing_translation(self) -> list[Paper]:
         """List active papers that still do not have an LLM translation."""
@@ -393,64 +400,67 @@ class DashboardStore:
         query_labels: tuple[str, ...] = (),
     ) -> list[Paper]:
         """List active papers that do not yet have a contribution score for one theme."""
-        cursor = self.conn.execute(
-            """
-            WITH latest_content AS (
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(
+                """
+                WITH latest_content AS (
+                    SELECT
+                        c.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY c.source, c.source_id
+                            ORDER BY c.fetched_at DESC, c.id DESC
+                        ) AS rn
+                    FROM paper_content c
+                ),
+                latest_theme AS (
+                    SELECT
+                        c.source,
+                        c.source_id,
+                        tc.research_theme_id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY tc.research_theme_id, c.source, c.source_id
+                            ORDER BY tc.generated_at DESC, tc.id DESC
+                        ) AS rn
+                    FROM theme_contributions tc
+                    JOIN paper_content c ON c.id = tc.paper_content_id
+                    WHERE tc.research_theme_id = ?
+                )
                 SELECT
-                    c.*,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY c.source, c.source_id
-                        ORDER BY c.fetched_at DESC, c.id DESC
-                    ) AS rn
-                FROM paper_content c
-            ),
-            latest_theme AS (
-                SELECT
-                    c.source,
-                    c.source_id,
-                    tc.research_theme_id,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY tc.research_theme_id, c.source, c.source_id
-                        ORDER BY tc.generated_at DESC, tc.id DESC
-                    ) AS rn
-                FROM theme_contributions tc
-                JOIN paper_content c ON c.id = tc.paper_content_id
-                WHERE tc.research_theme_id = ?
+                    lc.source,
+                    lc.source_id,
+                    lc.title,
+                    lc.authors,
+                    lc.abstract,
+                    lc.published_at,
+                    lc.updated_at,
+                    lc.primary_category,
+                    lc.categories,
+                    lc.abstract_url,
+                    lc.pdf_url,
+                    lc.doi,
+                    lc.extra
+                FROM seen_papers s
+                JOIN latest_content lc
+                  ON lc.source = s.source
+                 AND lc.source_id = s.source_id
+                 AND lc.rn = 1
+                LEFT JOIN latest_theme tt
+                  ON tt.source = s.source
+                 AND tt.source_id = s.source_id
+                 AND tt.research_theme_id = ?
+                 AND tt.rn = 1
+                WHERE s.archived_at IS NULL
+                  AND COALESCE(lc.abstract, '') <> ''
+                  AND tt.source IS NULL
+                ORDER BY COALESCE(lc.updated_at, lc.published_at, lc.fetched_at) DESC, lc.id DESC
+                """,
+                (theme_id, theme_id),
             )
-            SELECT
-                lc.source,
-                lc.source_id,
-                lc.title,
-                lc.authors,
-                lc.abstract,
-                lc.published_at,
-                lc.updated_at,
-                lc.primary_category,
-                lc.categories,
-                lc.abstract_url,
-                lc.pdf_url,
-                lc.doi,
-                lc.extra
-            FROM seen_papers s
-            JOIN latest_content lc
-              ON lc.source = s.source
-             AND lc.source_id = s.source_id
-             AND lc.rn = 1
-            LEFT JOIN latest_theme tt
-              ON tt.source = s.source
-             AND tt.source_id = s.source_id
-             AND tt.research_theme_id = ?
-             AND tt.rn = 1
-            WHERE s.archived_at IS NULL
-              AND COALESCE(lc.abstract, '') <> ''
-              AND tt.source IS NULL
-            ORDER BY COALESCE(lc.updated_at, lc.published_at, lc.fetched_at) DESC, lc.id DESC
-            """,
-            (theme_id, theme_id),
-        )
+            rows = cursor.fetchall()
+
         papers: list[Paper] = []
         normalized_labels = {label.strip().casefold() for label in query_labels if label.strip()}
-        for row in cursor.fetchall():
+        for row in rows:
             extra = _parse_json_object(row[12])
             matched_query = str(extra.get("matched_query") or "").strip().casefold()
             if normalized_labels and matched_query not in normalized_labels:
@@ -489,49 +499,51 @@ class DashboardStore:
             return
         timestamp = int(datetime.now().timestamp())
         rows: list[tuple[int, int, str, str, int, str | None]] = []
-        for info in infos:
-            paper_row = self.conn.execute(
+
+        with self.db_manager.connection() as conn:
+            for info in infos:
+                paper_row = conn.execute(
+                    """
+                    SELECT id
+                    FROM paper_content
+                    WHERE source = ? AND source_id = ?
+                    ORDER BY fetched_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (info.source, info.source_id),
+                ).fetchone()
+                if paper_row is None:
+                    continue
+                rows.append(
+                    (
+                        theme_id,
+                        int(paper_row[0]),
+                        provider,
+                        model,
+                        int(info.contribution_score),
+                        info.rationale,
+                    )
+                )
+            if not rows:
+                return
+            conn.executemany(
                 """
-                SELECT id
-                FROM paper_content
-                WHERE source = ? AND source_id = ?
-                ORDER BY fetched_at DESC, id DESC
-                LIMIT 1
-                """,
-                (info.source, info.source_id),
-            ).fetchone()
-            if paper_row is None:
-                continue
-            rows.append(
-                (
-                    theme_id,
-                    int(paper_row[0]),
+                INSERT INTO theme_contributions (
+                    research_theme_id,
+                    paper_content_id,
+                    generated_at,
                     provider,
                     model,
-                    int(info.contribution_score),
-                    info.rationale,
-                )
+                    contribution_score,
+                    rationale
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (theme_id, paper_content_id, timestamp, provider, model, score, rationale)
+                    for theme_id, paper_content_id, provider, model, score, rationale in rows
+                ],
             )
-        if not rows:
-            return
-        self.conn.executemany(
-            """
-            INSERT INTO theme_contributions (
-                research_theme_id,
-                paper_content_id,
-                generated_at,
-                provider,
-                model,
-                contribution_score,
-                rationale
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (theme_id, paper_content_id, timestamp, provider, model, score, rationale)
-                for theme_id, paper_content_id, provider, model, score, rationale in rows
-            ],
-        )
-        self.conn.commit()
+            conn.commit()
 
     def _list_papers(self, *, archived: bool, theme_id: int | None) -> list[DashboardPaperRecord]:
         """Query latest paper rows joined with latest LLM enrichment."""
@@ -549,89 +561,90 @@ class DashboardStore:
              AND theme.rn = 1
             """
             params = (theme_id,)
-        cursor = self.conn.execute(
-            f"""
-            WITH latest_content AS (
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(
+                f"""
+                WITH latest_content AS (
+                    SELECT
+                        c.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY c.source, c.source_id
+                            ORDER BY c.fetched_at DESC, c.id DESC
+                        ) AS rn
+                    FROM paper_content c
+                ),
+                latest_llm AS (
+                    SELECT
+                        c.source,
+                        c.source_id,
+                        l.abstract_translation,
+                        l.summary_tldr,
+                        l.summary_motivation,
+                        l.summary_problem,
+                        l.summary_method,
+                        l.summary_result,
+                        l.summary_conclusion,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY c.source, c.source_id
+                            ORDER BY l.generated_at DESC, l.id DESC
+                        ) AS rn
+                    FROM llm_generated l
+                    JOIN paper_content c ON c.id = l.paper_content_id
+                ),
+                latest_theme AS (
+                    SELECT
+                        tc.research_theme_id,
+                        c.source,
+                        c.source_id,
+                        tc.contribution_score,
+                        tc.rationale,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY tc.research_theme_id, c.source, c.source_id
+                            ORDER BY tc.generated_at DESC, tc.id DESC
+                        ) AS rn
+                    FROM theme_contributions tc
+                    JOIN paper_content c ON c.id = tc.paper_content_id
+                )
                 SELECT
-                    c.*,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY c.source, c.source_id
-                        ORDER BY c.fetched_at DESC, c.id DESC
-                    ) AS rn
-                FROM paper_content c
-            ),
-            latest_llm AS (
-                SELECT
-                    c.source,
-                    c.source_id,
-                    l.abstract_translation,
-                    l.summary_tldr,
-                    l.summary_motivation,
-                    l.summary_problem,
-                    l.summary_method,
-                    l.summary_result,
-                    l.summary_conclusion,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY c.source, c.source_id
-                        ORDER BY l.generated_at DESC, l.id DESC
-                    ) AS rn
-                FROM llm_generated l
-                JOIN paper_content c ON c.id = l.paper_content_id
-            ),
-            latest_theme AS (
-                SELECT
-                    tc.research_theme_id,
-                    c.source,
-                    c.source_id,
-                    tc.contribution_score,
-                    tc.rationale,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY tc.research_theme_id, c.source, c.source_id
-                        ORDER BY tc.generated_at DESC, tc.id DESC
-                    ) AS rn
-                FROM theme_contributions tc
-                JOIN paper_content c ON c.id = tc.paper_content_id
+                    s.source,
+                    s.source_id,
+                    lc.title,
+                    lc.authors,
+                    lc.abstract,
+                    lc.published_at,
+                    lc.updated_at,
+                    lc.fetched_at,
+                    lc.primary_category,
+                    lc.categories,
+                    lc.abstract_url,
+                    lc.pdf_url,
+                    lc.doi,
+                    lc.extra,
+                    llm.abstract_translation,
+                    llm.summary_tldr,
+                    llm.summary_motivation,
+                    llm.summary_problem,
+                    llm.summary_method,
+                    llm.summary_result,
+                    llm.summary_conclusion,
+                    {theme_select},
+                    s.archived_at
+                FROM seen_papers s
+                JOIN latest_content lc
+                  ON lc.source = s.source
+                 AND lc.source_id = s.source_id
+                 AND lc.rn = 1
+                LEFT JOIN latest_llm llm
+                  ON llm.source = s.source
+                 AND llm.source_id = s.source_id
+                 AND llm.rn = 1
+                {theme_join}
+                WHERE s.archived_at {comparison}
+                ORDER BY COALESCE(lc.updated_at, lc.published_at, lc.fetched_at) DESC, lc.id DESC
+                """,
+                params,
             )
-            SELECT
-                s.source,
-                s.source_id,
-                lc.title,
-                lc.authors,
-                lc.abstract,
-                lc.published_at,
-                lc.updated_at,
-                lc.fetched_at,
-                lc.primary_category,
-                lc.categories,
-                lc.abstract_url,
-                lc.pdf_url,
-                lc.doi,
-                lc.extra,
-                llm.abstract_translation,
-                llm.summary_tldr,
-                llm.summary_motivation,
-                llm.summary_problem,
-                llm.summary_method,
-                llm.summary_result,
-                llm.summary_conclusion,
-                {theme_select},
-                s.archived_at
-            FROM seen_papers s
-            JOIN latest_content lc
-              ON lc.source = s.source
-             AND lc.source_id = s.source_id
-             AND lc.rn = 1
-            LEFT JOIN latest_llm llm
-              ON llm.source = s.source
-             AND llm.source_id = s.source_id
-             AND llm.rn = 1
-            {theme_join}
-            WHERE s.archived_at {comparison}
-            ORDER BY COALESCE(lc.updated_at, lc.published_at, lc.fetched_at) DESC, lc.id DESC
-            """,
-            params,
-        )
-        return [_row_to_record(row) for row in cursor.fetchall()]
+            return [_row_to_record(row) for row in cursor.fetchall()]
 
     def _build_theme_board(self, theme: ResearchThemeRecord) -> dict[str, Any]:
         """Build one theme-specific board payload."""
@@ -649,40 +662,47 @@ class DashboardStore:
 
     def theme_queries_table_exists(self) -> bool:
         """Return whether the per-theme query table already exists."""
-        row = self.conn.execute(
-            """
-            SELECT 1
-            FROM sqlite_master
-            WHERE type = 'table' AND name = 'theme_queries'
-            LIMIT 1
-            """
-        ).fetchone()
+        is_postgres = getattr(self.db_manager, "db_type", "sqlite") == "postgres"
+        with self.db_manager.connection() as conn:
+            if is_postgres:
+                row = conn.execute(
+                    "SELECT 1 FROM information_schema.tables WHERE table_name = 'theme_queries' LIMIT 1"
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'theme_queries' LIMIT 1"
+                ).fetchone()
         return row is not None
 
     def ensure_theme_queries_table(self) -> None:
-        """Create theme query assignment table lazily for legacy databases."""
+        """Create theme query assignment table lazily for legacy SQLite databases."""
         if self._theme_queries_ready:
             return
-        self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS theme_queries (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              research_theme_id INTEGER NOT NULL,
-              label TEXT NOT NULL,
-              position INTEGER NOT NULL DEFAULT 0,
-              created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
-              UNIQUE(research_theme_id, label),
-              FOREIGN KEY (research_theme_id) REFERENCES research_themes(id) ON DELETE CASCADE
+        if getattr(self.db_manager, "db_type", "sqlite") == "postgres":
+            # PostgreSQL: table is always created by migration runner on startup.
+            self._theme_queries_ready = True
+            return
+        with self.db_manager.connection() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS theme_queries (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  research_theme_id INTEGER NOT NULL,
+                  label TEXT NOT NULL,
+                  position INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+                  UNIQUE(research_theme_id, label),
+                  FOREIGN KEY (research_theme_id) REFERENCES research_themes(id) ON DELETE CASCADE
+                )
+                """
             )
-            """
-        )
-        self.conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_theme_queries_theme_position
-              ON theme_queries(research_theme_id, position, id)
-            """
-        )
-        self.conn.commit()
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_theme_queries_theme_position
+                  ON theme_queries(research_theme_id, position, id)
+                """
+            )
+            conn.commit()
         self._theme_queries_ready = True
 
 

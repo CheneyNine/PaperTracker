@@ -78,4 +78,14 @@ MIGRATION = Migration(
             AND title_author_year_fingerprint <> '';
     """,
     hook=_backfill_fingerprint,
+    pg_sql="""
+        ALTER TABLE seen_papers
+          ADD COLUMN IF NOT EXISTS title_author_year_fingerprint TEXT;
+
+        CREATE INDEX IF NOT EXISTS idx_seen_title_author_year_fingerprint
+          ON seen_papers(title_author_year_fingerprint)
+          WHERE title_author_year_fingerprint IS NOT NULL
+            AND title_author_year_fingerprint <> '';
+    """,
+    pg_hook=_backfill_fingerprint,
 )

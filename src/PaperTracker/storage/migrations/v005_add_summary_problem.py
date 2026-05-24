@@ -11,4 +11,8 @@ MIGRATION = Migration(
         ALTER TABLE llm_generated
         ADD COLUMN summary_problem TEXT;
     """,
+    pg_sql="""
+        ALTER TABLE llm_generated
+        ADD COLUMN IF NOT EXISTS summary_problem TEXT;
+    """,
 )

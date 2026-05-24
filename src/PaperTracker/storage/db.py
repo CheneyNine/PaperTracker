@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Generator
 
 from PaperTracker.storage.migration import run_migrations
 
@@ -45,9 +47,12 @@ class DatabaseManager:
             instance = super().__new__(cls)
             instance.conn = ensure_db(db_path)
             instance._instance_key = instance_key
+            instance._db_path = db_path
             run_migrations(instance.conn)
             cls._instances[instance_key] = instance
         return cls._instances[instance_key]
+
+    db_type: str = "sqlite"
 
     def get_connection(self) -> sqlite3.Connection:
         """Get the shared database connection.
@@ -56,6 +61,17 @@ class DatabaseManager:
             SQLite connection.
         """
         return self.conn
+
+    @contextmanager
+    def connection(self) -> Generator[sqlite3.Connection, None, None]:
+        """Yield the per-thread SQLite connection.
+
+        FastAPI runs sync routes in a threadpool. Calling this from a worker
+        thread transparently creates (or reuses) a per-thread connection so
+        SQLite's thread-safety check is never violated.
+        """
+        thread_manager: DatabaseManager = type(self)(self._db_path)
+        yield thread_manager.conn
 
     def close(self) -> None:
         """Close the database connection and reset singleton instance.

@@ -5,7 +5,7 @@ Tracks seen papers in SQLite and filters incoming batches using DOI-first and fi
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from PaperTracker.core.dedup import (
     build_title_author_year_fingerprint,
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 class SqliteDeduplicateStore:
-    """SQLite-based deduplication store for tracking seen papers."""
+    """Database-backed deduplication store for tracking seen papers."""
 
     def __init__(self, db_manager: DatabaseManager):
         """Initialize deduplication store.
@@ -28,7 +28,7 @@ class SqliteDeduplicateStore:
             db_manager: Shared database manager instance.
         """
         log.debug("Initializing SqliteDeduplicateStore")
-        self.conn = db_manager.get_connection()
+        self.db_manager = db_manager
 
     def filter_new(self, papers: Sequence[Paper]) -> list[Paper]:
         """Filter papers to only new ones not seen before.
@@ -138,8 +138,9 @@ class SqliteDeduplicateStore:
             return set()
 
         query = "SELECT source, source_id FROM seen_papers WHERE " + " OR ".join(clauses)
-        cursor = self.conn.execute(query, params)
-        return {(row[0], row[1]) for row in cursor}
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(query, params)
+            return {(row[0], row[1]) for row in cursor.fetchall()}
 
     def _fetch_seen_doi_norms(
         self,
@@ -159,18 +160,14 @@ class SqliteDeduplicateStore:
 
         placeholders = ",".join("?" for _ in doi_norms)
         if source_scope:
-            query = f"""
-                SELECT doi_norm FROM seen_papers
-                WHERE source = ? AND doi_norm IN ({placeholders})
-            """
-            cursor = self.conn.execute(query, [source_scope, *doi_norms])
+            query = f"SELECT doi_norm FROM seen_papers WHERE source = ? AND doi_norm IN ({placeholders})"
+            args: list[Any] = [source_scope, *doi_norms]
         else:
-            query = f"""
-                SELECT doi_norm FROM seen_papers
-                WHERE doi_norm IN ({placeholders})
-            """
-            cursor = self.conn.execute(query, doi_norms)
-        return {row[0] for row in cursor if isinstance(row[0], str) and row[0]}
+            query = f"SELECT doi_norm FROM seen_papers WHERE doi_norm IN ({placeholders})"
+            args = list(doi_norms)
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(query, args)
+            return {row[0] for row in cursor.fetchall() if isinstance(row[0], str) and row[0]}
 
     def _fetch_seen_fingerprints(
         self,
@@ -190,48 +187,40 @@ class SqliteDeduplicateStore:
 
         placeholders = ",".join("?" for _ in fingerprints)
         if source_scope:
-            query = f"""
-                SELECT title_author_year_fingerprint FROM seen_papers
-                WHERE source = ? AND title_author_year_fingerprint IN ({placeholders})
-            """
-            cursor = self.conn.execute(query, [source_scope, *fingerprints])
+            query = f"SELECT title_author_year_fingerprint FROM seen_papers WHERE source = ? AND title_author_year_fingerprint IN ({placeholders})"
+            args2: list[Any] = [source_scope, *fingerprints]
         else:
-            query = f"""
-                SELECT title_author_year_fingerprint FROM seen_papers
-                WHERE title_author_year_fingerprint IN ({placeholders})
-            """
-            cursor = self.conn.execute(query, fingerprints)
-        return {row[0] for row in cursor if isinstance(row[0], str) and row[0]}
+            query = f"SELECT title_author_year_fingerprint FROM seen_papers WHERE title_author_year_fingerprint IN ({placeholders})"
+            args2 = list(fingerprints)
+        with self.db_manager.connection() as conn:
+            cursor = conn.execute(query, args2)
+            return {row[0] for row in cursor.fetchall() if isinstance(row[0], str) and row[0]}
 
     def mark_seen(self, papers: Sequence[Paper]) -> None:
-        """Mark papers as seen in the state store.
-
-        Args:
-            papers: Papers to mark as seen.
-        """
+        """Mark papers as seen in the state store."""
         if not papers:
             return
 
-        for paper in papers:
-            self.conn.execute(
-                """
-                INSERT INTO seen_papers (source, source_id, doi, title, title_author_year_fingerprint)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(source, source_id) DO UPDATE SET
-                    title = excluded.title,
-                    doi = excluded.doi,
-                    title_author_year_fingerprint = excluded.title_author_year_fingerprint
-                """,
-                (
-                    paper.source,
-                    paper.id,
-                    paper.doi,
-                    paper.title,
-                    build_title_author_year_fingerprint(paper),
-                ),
-            )
-
-        self.conn.commit()
+        with self.db_manager.connection() as conn:
+            for paper in papers:
+                conn.execute(
+                    """
+                    INSERT INTO seen_papers (source, source_id, doi, title, title_author_year_fingerprint)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(source, source_id) DO UPDATE SET
+                        title = excluded.title,
+                        doi = excluded.doi,
+                        title_author_year_fingerprint = excluded.title_author_year_fingerprint
+                    """,
+                    (
+                        paper.source,
+                        paper.id,
+                        paper.doi,
+                        paper.title,
+                        build_title_author_year_fingerprint(paper),
+                    ),
+                )
+            conn.commit()
         log.debug("Marked %d papers as seen", len(papers))
 
 

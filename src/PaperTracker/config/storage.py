@@ -5,12 +5,14 @@ Defines loading and validation for persistence settings, including database path
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 from PaperTracker.config.common import (
     expect_bool,
     expect_str,
+    get_optional_value,
     get_required_value,
     get_section,
 )
@@ -24,6 +26,8 @@ class StorageConfig:
     db_path: str
     content_storage_enabled: bool
     keep_arxiv_version: bool
+    backend: str = "sqlite"
+    database_url: str | None = None
 
 
 def load_storage(raw: Mapping[str, Any]) -> StorageConfig:
@@ -40,6 +44,10 @@ def load_storage(raw: Mapping[str, Any]) -> StorageConfig:
         ValueError: If required keys are missing.
     """
     storage_section = get_section(raw, "storage", required=True)
+    backend_raw = get_optional_value(storage_section, "backend", None) or os.environ.get("STORAGE_BACKEND") or "sqlite"
+    database_url_raw = get_optional_value(storage_section, "database_url", None)
+    if database_url_raw is None:
+        database_url_raw = os.environ.get("DATABASE_URL") or None
     return StorageConfig(
         enabled=expect_bool(
             get_required_value(storage_section, "enabled", "storage.enabled"),
@@ -61,6 +69,8 @@ def load_storage(raw: Mapping[str, Any]) -> StorageConfig:
             ),
             "storage.keep_arxiv_version",
         ),
+        backend=expect_str(backend_raw, "storage.backend") if backend_raw is not None else "sqlite",
+        database_url=expect_str(database_url_raw, "storage.database_url") if database_url_raw is not None else None,
     )
 
 

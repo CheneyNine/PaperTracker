@@ -7,105 +7,467 @@
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-  <div class="workspace">
+  <div id="app" class="workspace">
     <aside class="sidebar">
       <div class="sidebar-brand">
         <p class="sidebar-kicker">Paper Tracker</p>
         <h1>论文研究看板</h1>
       </div>
 
+      <!-- Research Themes -->
       <section class="sidebar-section">
         <p class="sidebar-label">Research Theme</p>
         <h2>研究主题</h2>
-        <div id="theme-directory" class="theme-list"></div>
-        <form id="theme-form" class="sidebar-form">
+        <div class="theme-list">
+          <p v-if="!researchThemes.length" class="empty-state">先添加一个研究主题，刷新后这里的论文卡片才会出现贡献度百分比。</p>
+          <article
+            v-for="theme in researchThemes"
+            :key="theme.id"
+            :class="['theme-card', { 'is-active': Number(theme.id) === Number(selectedThemeId), 'is-editing': Number(theme.id) === Number(editingThemeId) }]"
+          >
+            <!-- Editing state -->
+            <template v-if="Number(theme.id) === Number(editingThemeId)">
+              <div class="theme-card-head">
+                <div class="theme-inline-edit">
+                  <input
+                    type="text"
+                    class="sidebar-input theme-inline-input"
+                    v-model="themeEditForm.name"
+                  >
+                  <textarea
+                    class="sidebar-input sidebar-textarea theme-inline-textarea"
+                    v-model="themeEditForm.description"
+                    @input="autoGrow($event.target)"
+                  ></textarea>
+                </div>
+              </div>
+              <div class="theme-actions">
+                <button type="button" class="theme-mini" @click="saveInlineTheme(theme.id)">保存</button>
+                <button type="button" class="theme-mini" @click="cancelInlineTheme()">取消</button>
+              </div>
+            </template>
+            <!-- Normal state -->
+            <template v-else>
+              <div class="theme-card-head">
+                <button type="button" class="theme-card-select" @click="selectTheme(theme.id)">
+                  <h3>{{ theme.name }}</h3>
+                  <p>{{ theme.description || '' }}</p>
+                  <div class="theme-card-meta">
+                    <span class="theme-card-count">{{ getThemeBoard(theme.id)?.paper_count || 0 }} 篇论文</span>
+                    <span class="theme-card-count">{{ (getThemeBoard(theme.id)?.query_labels || []).length }} 个关键词</span>
+                  </div>
+                </button>
+              </div>
+              <div class="theme-actions">
+                <button type="button" class="theme-mini" @click="startEditTheme(theme.id)">编辑</button>
+                <button type="button" class="theme-mini" @click="deleteTheme(theme.id)">删除</button>
+              </div>
+            </template>
+          </article>
+        </div>
+
+        <form class="sidebar-form" @submit.prevent="createTheme">
           <input
-            id="theme-name-input"
             class="sidebar-input"
             type="text"
-            name="theme_name"
+            v-model="themeForm.name"
             placeholder="主题名称"
             autocomplete="off"
           >
           <textarea
-            id="theme-description-input"
             class="sidebar-input sidebar-textarea"
-            name="theme_description"
+            v-model="themeForm.description"
             placeholder="描述研究动机、问题范围、重点方法或评价标准"
+            @input="autoGrow($event.target)"
           ></textarea>
           <button type="submit" class="sidebar-button">保存主题</button>
         </form>
-        <p id="theme-feedback" class="sidebar-feedback"></p>
+        <p class="sidebar-feedback" :style="themeFeedbackIsError ? 'color:#b42318' : ''">{{ themeFeedback }}</p>
       </section>
 
+      <!-- Keywords / Queries -->
       <section class="sidebar-section">
         <p class="sidebar-label">Keywords</p>
         <div class="sidebar-section-head">
           <h2>检索目录</h2>
         </div>
         <p class="sidebar-note">当前显示的是所选主题下的关键词。新增条目会在下次刷新时参与这个主题的检索；删除条目时，只会归档当前主题列表里这一组论文。</p>
-        <form id="query-form" class="sidebar-form">
+        <form class="sidebar-form" @submit.prevent="addQuery">
           <div class="query-input-row">
             <input
-              id="query-input"
               class="sidebar-input"
               type="text"
-              name="query"
+              v-model="queryInput"
               placeholder="添加新的检索关键词"
               autocomplete="off"
             >
             <button type="submit" class="sidebar-button query-add-button">添加</button>
           </div>
-          <button id="query-suggest-button" type="button" class="sidebar-button">AI 智能生成关键词</button>
+          <button
+            type="button"
+            class="sidebar-button"
+            :disabled="suggestingQueries"
+            @click="suggestQueriesAction"
+          >AI 智能生成关键词</button>
         </form>
-        <p id="query-feedback" class="sidebar-feedback"></p>
-        <div id="query-directory" class="nav-tree"></div>
+        <p class="sidebar-feedback" :style="queryFeedbackIsError ? 'color:#b42318' : ''">{{ queryFeedback }}</p>
+        <div class="nav-tree">
+          <div v-for="([label, papers]) in selectedBoardAllGroups" :key="label" class="query-row">
+            <a class="query-link" :href="'#query-' + encodeQueryId(label)">
+              <strong>{{ label }}</strong>
+              <span>{{ papers.length }} 篇论文</span>
+            </a>
+            <button type="button" class="query-delete" @click="deleteQuery(label)">删除</button>
+          </div>
+        </div>
       </section>
     </aside>
 
     <main class="content">
       <div class="content-toolbar">
-        <div id="theme-switcher" class="filter-chip-row content-filter-row"></div>
+        <div v-show="currentView === 'papers'" class="filter-chip-row content-filter-row">
+          <button
+            v-for="chip in filterChips"
+            :key="chip.mode"
+            type="button"
+            :class="['filter-chip', { 'is-active': filterMode === chip.mode }]"
+            @click="filterMode = chip.mode"
+          >
+            <span class="filter-chip-label">{{ chip.label }}</span>
+            <span class="filter-chip-count">{{ chip.count }} 篇</span>
+          </button>
+        </div>
         <div class="content-actions">
-          <button id="view-toggle-button" type="button" class="sidebar-button">设置</button>
-          <button id="refresh-button" type="button" class="sidebar-button sidebar-button-primary">更新</button>
-          <button id="sort-button" type="button" class="sidebar-button sort-button">按贡献度排序</button>
+          <button
+            type="button"
+            :class="['sidebar-button', { 'is-active': currentView === 'settings' }]"
+            @click="toggleView"
+          >{{ currentView === 'settings' ? '返回看板' : '设置' }}</button>
+          <button
+            v-show="currentView === 'papers'"
+            type="button"
+            class="sidebar-button sidebar-button-primary"
+            @click="triggerRefresh"
+          >更新</button>
+          <button
+            v-show="currentView === 'papers'"
+            type="button"
+            :class="['sidebar-button sort-button', { 'is-active': sortMode === 'contribution' }]"
+            @click="toggleSort"
+          >{{ sortMode === 'contribution' ? '恢复默认排序' : '按贡献度排序' }}</button>
         </div>
       </div>
-      <div id="content-status" class="content-status">
-        <p id="refresh-status" class="content-sub">只会刷新当前选中的研究主题，并按这个主题下的关键词去检索、补齐摘要与贡献度。</p>
+
+      <div v-show="currentView === 'papers'" class="content-status">
+        <p class="content-sub">{{ refreshStatus }}</p>
         <div class="progress-track" aria-hidden="true">
-          <div id="refresh-progress-bar" class="progress-bar"></div>
+          <div class="progress-bar" :style="{ width: refreshProgress + '%' }"></div>
         </div>
       </div>
 
-      <section id="papers-view">
-        <div id="active-list" class="paper-sections"></div>
+      <!-- Papers View -->
+      <section v-show="currentView === 'papers'" id="papers-view">
+        <div class="paper-sections">
+          <p v-if="!researchThemes.length" class="empty-state">先添加一个研究主题。右侧会为每个主题单独生成一块论文看板。</p>
+          <p v-else-if="!selectedBoard" class="empty-state">当前没有可展示的主题看板。</p>
+          <section v-else class="theme-board">
+            <header class="theme-board-head">
+              <div>
+                <h2>{{ selectedBoard.theme.name || '未命名主题' }}</h2>
+                <p>{{ selectedBoard.theme.description || '' }}</p>
+              </div>
+              <span class="status-chip">{{ selectedBoard.paper_count || 0 }} 篇</span>
+            </header>
 
+            <p v-if="!sortedGroupedPapers.length" class="empty-state">当前主题下的论文可能已经全部归档，或者暂时没有新的命中文献。如需获取新论文，请点击右上角"更新"。</p>
+
+            <section
+              v-for="([label, papers]) in sortedGroupedPapers"
+              :key="label"
+              class="query-section"
+              :id="'query-' + encodeQueryId(label)"
+            >
+              <header class="query-section-head">
+                <h3>{{ label }}</h3>
+                <p>{{ papers.length }} 篇论文</p>
+              </header>
+              <div class="paper-grid">
+                <article
+                  v-for="paper in papers"
+                  :key="paperKey(paper)"
+                  :class="['paper-card', { 'is-expanded': expandedPaperKeys.has(paperKey(paper)) }]"
+                >
+                  <div class="paper-headline">
+                    <div>
+                      <h3 class="paper-title">{{ paper.title }}</h3>
+                      <p class="paper-authors">{{ (paper.authors || []).join(', ') }}</p>
+                      <div class="paper-keywords">
+                        <span v-if="paper.matched_query" class="keyword-chip"><span class="chip-mark">#</span>{{ paper.matched_query }}</span>
+                        <span v-if="paper.primary_category" class="keyword-chip keyword-chip-gray"><span class="chip-mark">#</span>{{ paper.primary_category }}</span>
+                        <span v-if="paper.ccf_rank" class="keyword-chip keyword-chip-gray"><span class="chip-mark">#</span>{{ paper.ccf_rank }}</span>
+                        <span v-if="paper.source" class="keyword-chip keyword-chip-gray"><span class="chip-mark">#</span>{{ paper.source }}</span>
+                        <span
+                          v-if="paper.theme_contribution_score != null"
+                          class="status-chip"
+                          :title="paper.theme_contribution_rationale || ''"
+                        >贡献度 {{ paper.theme_contribution_score }}%</span>
+                      </div>
+                    </div>
+                    <button type="button" class="paper-button is-danger" @click="archivePaper(paper)">Archive</button>
+                  </div>
+
+                  <div class="paper-insights">
+                    <div v-if="paper.motivation" class="insight-row">
+                      <div class="insight-label">🎯 研究动机</div>
+                      <div class="insight-content">{{ paper.motivation }}</div>
+                    </div>
+                    <div v-if="paper.problem" class="insight-row">
+                      <div class="insight-label">🧩 解决问题</div>
+                      <div class="insight-content">{{ paper.problem }}</div>
+                    </div>
+                    <div v-if="paper.tldr" class="insight-row">
+                      <div class="insight-label">🔎 现状分析</div>
+                      <div class="insight-content">{{ paper.tldr }}</div>
+                    </div>
+                    <div v-if="paper.method" class="insight-row">
+                      <div class="insight-label">🛠️ 主要方法和数据</div>
+                      <div class="insight-content">{{ paper.method }}</div>
+                    </div>
+                    <div v-if="paper.result" class="insight-row">
+                      <div class="insight-label">🧪 数据实验</div>
+                      <div class="insight-content">{{ paper.result }}</div>
+                    </div>
+                    <div v-if="paper.conclusion" class="insight-row">
+                      <div class="insight-label">🌟 主要贡献</div>
+                      <div class="insight-content">{{ paper.conclusion }}</div>
+                    </div>
+                  </div>
+
+                  <div class="paper-actions">
+                    <button type="button" class="paper-toggle" @click="togglePaperExpanded(paperKey(paper))">
+                      {{ expandedPaperKeys.has(paperKey(paper)) ? '收起完整摘要' : '查看完整摘要' }}
+                    </button>
+                    <a v-if="paper.pdf_url" class="paper-inline-link" :href="paper.pdf_url" target="_blank" rel="noopener noreferrer">查看 PDF</a>
+                    <span v-else class="paper-inline-link is-disabled">查看 PDF</span>
+                    <a v-if="paper.abstract_url" class="paper-inline-link" :href="paper.abstract_url" target="_blank" rel="noopener noreferrer">打开原链接</a>
+                    <span v-else class="paper-inline-link is-disabled">打开原链接</span>
+                  </div>
+
+                  <div class="paper-summary">
+                    <div class="summary-grid">
+                      <section v-if="paper.abstract_translation" class="summary-block">
+                        <strong>📝 摘要翻译</strong>
+                        <p>{{ paper.abstract_translation }}</p>
+                      </section>
+                      <section v-if="paper.abstract" class="summary-block">
+                        <strong>📄 英文摘要</strong>
+                        <p>{{ paper.abstract }}</p>
+                      </section>
+                    </div>
+                  </div>
+
+                  <div class="paper-footer">
+                    <span>Published: {{ paper.published_at || '-' }}</span>
+                    <span>Updated: {{ paper.updated_at || '-' }}</span>
+                    <span>Fetched: {{ paper.fetched_at || '-' }}</span>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </section>
+        </div>
+
+        <!-- Archive panel -->
         <section class="archive-panel">
-          <details id="archive-details" class="archive-details">
+          <details class="archive-details">
             <summary class="archive-summary">
               <div>
                 <p class="content-kicker">Archive</p>
                 <h2>已归档论文</h2>
               </div>
               <div class="archive-summary-side">
-                <p class="content-sub">这里收纳“已了解 / 忽略”的论文，可随时恢复。</p>
+                <p class="content-sub">这里收纳"已了解 / 忽略"的论文，可随时恢复。</p>
                 <span class="archive-toggle-hint" aria-hidden="true"></span>
               </div>
             </summary>
-            <div id="archive-list" class="archive-list"></div>
+            <div class="archive-list">
+              <p v-if="!archivedPapers.length" class="empty-state">Archive 还是空的。你在主列表里点 Archive 后，论文会移动到这里。</p>
+              <article v-for="paper in archivedPapers" :key="paperKey(paper)" class="archive-card">
+                <h3>{{ paper.title }}</h3>
+                <p class="paper-authors">{{ (paper.authors || []).join(', ') }}</p>
+                <div class="archive-meta">
+                  <span v-if="paper.source" class="keyword-chip keyword-chip-gray"><span class="chip-mark">#</span>{{ paper.source }}</span>
+                  <span v-if="paper.matched_query" class="keyword-chip"><span class="chip-mark">#</span>{{ paper.matched_query }}</span>
+                  <span v-if="paper.archived_at" class="status-chip">归档于 {{ paper.archived_at }}</span>
+                </div>
+                <div class="paper-actions">
+                  <a v-if="paper.pdf_url" class="paper-inline-link" :href="paper.pdf_url" target="_blank" rel="noopener noreferrer">查看 PDF 文件</a>
+                  <span v-else class="paper-inline-link is-disabled">查看 PDF 文件</span>
+                  <a v-if="paper.abstract_url" class="paper-inline-link" :href="paper.abstract_url" target="_blank" rel="noopener noreferrer">打开原链接</a>
+                  <span v-else class="paper-inline-link is-disabled">打开原链接</span>
+                  <button type="button" class="paper-button" @click="restorePaper(paper)">Restore</button>
+                </div>
+              </article>
+            </div>
           </details>
         </section>
       </section>
 
-      <section id="settings-view" class="settings-view" hidden></section>
+      <!-- Settings View -->
+      <section v-show="currentView === 'settings'" class="settings-view">
+        <section class="settings-shell">
+          <header class="settings-header">
+            <div>
+              <p class="content-kicker">Settings</p>
+              <h2>配置中心</h2>
+              <p class="content-sub">这里可以直接维护 LLM 和默认检索渠道设置，保存后下一次更新会立即按新配置生效。</p>
+            </div>
+          </header>
+
+          <p v-if="settingsLoading && !settings" class="empty-state">正在加载设置…</p>
+          <form v-else class="settings-form" @submit.prevent="saveSettingsAction">
+
+            <section class="settings-card">
+              <div class="settings-card-head">
+                <h3>LLM 设置</h3>
+                <label class="settings-toggle">
+                  <input type="checkbox" v-model="settingsForm.llm_enabled">
+                  <span>启用 LLM</span>
+                </label>
+              </div>
+              <div class="settings-grid settings-grid-llm-top">
+                <label class="settings-field">
+                  <span>Base URL</span>
+                  <input
+                    class="sidebar-input"
+                    type="text"
+                    v-model="settingsForm.llm_base_url"
+                    placeholder="例如：https://api.openai.com/v1"
+                  >
+                </label>
+                <label class="settings-field">
+                  <span>API Key</span>
+                  <input
+                    class="sidebar-input"
+                    type="text"
+                    v-model="settingsForm.llm_api_key"
+                    placeholder="例如：sk-..."
+                    autocomplete="off"
+                  >
+                </label>
+                <label class="settings-field">
+                  <span>连接检测</span>
+                  <button
+                    type="button"
+                    class="sidebar-button settings-inline-button"
+                    :disabled="llmDiscoveryRunning"
+                    @click="discoverLlmModels"
+                  >{{ llmDiscoveryRunning ? '检测中…' : '检测' }}</button>
+                </label>
+              </div>
+              <div class="settings-grid settings-grid-llm-bottom">
+                <label class="settings-field">
+                  <span>Model</span>
+                  <select class="sidebar-input" v-model="settingsForm.llm_model">
+                    <option v-if="!modelSelectOptions.length" value="" disabled>请先填写 URL 和 Key，然后点击检测</option>
+                    <option v-for="model in modelSelectOptions" :key="model" :value="model">{{ model }}</option>
+                  </select>
+                </label>
+                <label class="settings-field">
+                  <span>目标语言</span>
+                  <select
+                    class="sidebar-input"
+                    v-model="settingsForm.llm_target_lang"
+                    autocomplete="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-form-type="other"
+                  >
+                    <option v-for="lang in extendedTargetLanguageOptions" :key="lang" :value="lang">{{ lang }}</option>
+                  </select>
+                </label>
+              </div>
+              <div class="settings-check-row">
+                <label class="settings-check">
+                  <input type="checkbox" v-model="settingsForm.llm_enable_translation">
+                  <span>摘要翻译</span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" v-model="settingsForm.llm_enable_summary">
+                  <span>结构化摘要</span>
+                </label>
+              </div>
+              <p class="sidebar-feedback" :style="llmDiscoveryFeedbackIsError ? 'color:#b42318' : ''">{{ llmDiscoveryFeedback }}</p>
+            </section>
+
+            <section class="settings-card">
+              <div class="settings-card-head">
+                <h3>检索设置</h3>
+                <label class="settings-toggle">
+                  <input type="checkbox" v-model="settingsForm.search_ccf_enabled">
+                  <span>启用 CCF 匹配</span>
+                </label>
+              </div>
+              <div class="settings-field">
+                <span>默认检索网站</span>
+                <p class="sidebar-feedback">只有选中的渠道会参与本次更新。</p>
+                <div class="settings-choice-grid">
+                  <label
+                    v-for="sourceName in supportedSources"
+                    :key="sourceName"
+                    class="settings-check settings-choice-item"
+                  >
+                    <input type="checkbox" :value="sourceName" v-model="settingsForm.search_sources">
+                    <span>{{ sourceLabel(sourceName) }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="settings-field">
+                <span>CCF 等级范围</span>
+                <div class="settings-check-row">
+                  <label v-for="rank in ['A', 'B', 'C']" :key="rank" class="settings-check">
+                    <input type="checkbox" :value="rank" v-model="settingsForm.search_ccf_ranks">
+                    <span>CCF-{{ rank }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>arXiv 请求间隔（秒）</span>
+                  <input
+                    class="sidebar-input"
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    v-model.number="settingsForm.search_arxiv_interval"
+                  >
+                </label>
+              </div>
+              <div class="settings-actions settings-actions-inline">
+                <button type="button" class="sidebar-button" @click="refreshCcfWhitelist">更新 CCF 白名单</button>
+              </div>
+              <p class="sidebar-feedback" :style="ccfFeedbackIsError ? 'color:#b42318' : ''">{{ ccfFeedback }}</p>
+              <p class="sidebar-feedback">{{ ccfStatus }}</p>
+            </section>
+
+            <div class="settings-actions">
+              <button type="submit" class="sidebar-button sidebar-button-primary">
+                {{ settingsSaving ? '保存中…' : '保存设置' }}
+              </button>
+              <p class="sidebar-feedback" :style="settingsFeedbackIsError ? 'color:#b42318' : ''">{{ settingsFeedback }}</p>
+            </div>
+          </form>
+        </section>
+      </section>
     </main>
   </div>
 
   <script>
     window.DASHBOARD_CONFIG = __DASHBOARD_CONFIG__;
   </script>
-  <script src="/assets/app.js"></script>
+  <script src="/assets/vue.global.prod.js"></script>
+  <script src="/assets/app.vue.js"></script>
 </body>
 </html>

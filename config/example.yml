@@ -1,72 +1,48 @@
-# Paper Tracker example config
-# Copy this file and modify it, then run: paper-tracker search --config config/custom.yml
-# For all available options and defaults, see: src/PaperTracker/config/defaults.yml
-
-# Search queries (required - replace with your topics of interest)
-#
-# Full-text OR/NOT: match any OR term, exclude any NOT term
-# Field filters: TITLE / ABSTRACT / AUTHOR / JOURNAL / CATEGORY
-#   each field supports AND / OR / NOT independently
-
 storage:
   enabled: true
-  content_storage_enabled: true   # save full paper content (default: true)
-  keep_arxiv_version: false       # false: 2601.21922, true: 2601.21922v1
-
+  content_storage_enabled: true
+  keep_arxiv_version: false
 search:
-  sources: [arxiv]            # available: [arxiv, openalex, dblp, openreview]
-  max_results: 3              # max paper count for each query
-  pull_every: 7               # Strict time window filter[now - <pull_every>, now], unit: day
-  fill_enabled: true          # Allow fill with paper outside the strict time window
-  max_lookback_days: 30       # Max length for fill window, -1 as infinite
-  arxiv_min_interval_seconds: 12.0  # Minimum spacing between arXiv requests; raise this if you still hit 429
-
+  sources:
+  - arxiv
+  max_results: 3
+  pull_every: 7
+  fill_enabled: true
+  max_lookback_days: 30
+  arxiv_min_interval_seconds: 12.0
 queries:
-  - NAME: Deep Learning
+- NAME: Deep Learning
+  OR:
+  - deep learning
+  - neural network
+  NOT:
+  - survey
+  CATEGORY:
     OR:
-      - deep learning
-      - neural network
-    NOT:
-      - survey
-    CATEGORY:
-      OR:
-        - cs.LG
-        - cs.CV
-
-  - NAME: LLM Research
+    - cs.LG
+    - cs.CV
+- NAME: LLM Research
+  OR:
+  - large language model
+  - LLM
+  NOT:
+  - law
+  - legal
+  CATEGORY:
     OR:
-      - large language model
-      - LLM
-    NOT:
-      - law             # exclude "LLM" as Master of Laws
-      - legal
-    CATEGORY:
-      OR:
-        - cs.CL
-        - cs.AI
-
-# Output formats (options: console, json, markdown, html)
+    - cs.CL
+    - cs.AI
+- NAME: test query
+  OR:
+  - test query
 output:
   base_dir: output/
-  formats: [console, markdown, html]      # console, json, markdown, html 
-
-# LLM_API_KEY are required if enabled
+  formats:
+  - console
+  - markdown
+  - html
 llm:
   enabled: false
-  enable_translation: false               # Enable abstract translation
-  enable_summary: false                   # Enable paper summary (TLDR, motivation, method, result, conclusion)
+  enable_translation: false
+  enable_summary: false
   target_lang: Simplified Chinese
-# OpenAI GPT-4o-mini (recommended for cost):
-  # enabled: true
-  # base_url: https://api.openai.com
-  # model: gpt-4o-mini
-
-# DeepSeek (very cost-effective):
-  # enabled: true
-  # base_url: https://api.deepseek.com
-  # model: deepseek-chat
-
-# SiliconFlow (free tier available):
-  # enabled: true
-  # base_url: https://api.siliconflow.cn
-  # model: Qwen/Qwen2.5-7B-Instruct

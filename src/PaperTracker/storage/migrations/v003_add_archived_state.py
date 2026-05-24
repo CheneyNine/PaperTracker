@@ -14,4 +14,11 @@ MIGRATION = Migration(
         CREATE INDEX IF NOT EXISTS idx_seen_archived_at
           ON seen_papers(archived_at);
     """,
+    pg_sql="""
+        ALTER TABLE seen_papers
+          ADD COLUMN IF NOT EXISTS archived_at BIGINT;
+
+        CREATE INDEX IF NOT EXISTS idx_seen_archived_at
+          ON seen_papers(archived_at);
+    """,
 )

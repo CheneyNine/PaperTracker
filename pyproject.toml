@@ -15,7 +15,12 @@ dependencies = [
   "python-dateutil>=2.9.0.post0",
   "python-dotenv>=1.0.0",
   "requests>=2.32.0",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
 ]
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9.0"]
 
 [project.scripts]
 paper-tracker = "PaperTracker.cli:main"

@@ -10,6 +10,7 @@ import pkgutil
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from PaperTracker.utils.log import log
 
@@ -34,17 +35,18 @@ class Migration:
     Attributes:
         version: Monotonically increasing integer, starting at 1.
         description: Human-readable summary of what this migration does.
-        sql: One or more semicolon-separated DDL/DML statements to execute.
-        hook: Optional Python callable executed after all SQL statements, within
-            the same transaction.  Receives the active connection and may issue
-            additional DML.  Use this for backfill logic that must match runtime
-            Python semantics (e.g. normalisation functions).
+        sql: SQLite DDL/DML statements (semicolon-separated).
+        hook: Optional callable run after SQLite SQL, within the same transaction.
+        pg_sql: PostgreSQL-compatible DDL/DML; if empty, the SQLite sql field is used.
+        pg_hook: Optional callable run after PostgreSQL SQL, within the same transaction.
     """
 
     version: int
     description: str
     sql: str
-    hook: Callable[[sqlite3.Connection], None] | None = field(default=None, compare=False, hash=False)
+    hook: Callable[[Any], None] | None = field(default=None, compare=False, hash=False)
+    pg_sql: str = field(default="", compare=False, hash=False)
+    pg_hook: Callable[[Any], None] | None = field(default=None, compare=False, hash=False)
 
 
 # ---------------------------------------------------------------------------

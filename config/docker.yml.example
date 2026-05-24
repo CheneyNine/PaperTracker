@@ -1,0 +1,40 @@
+# Docker deployment config template.
+# Copy this file to config/custom.yml and edit as needed.
+# When using docker-compose, DATABASE_URL and STORAGE_BACKEND are set via environment variables.
+
+dashboard:
+  host: 0.0.0.0   # must be 0.0.0.0 inside Docker to accept external connections
+  port: 8765
+
+storage:
+  enabled: true
+  db_path: /app/database/papers.db   # only used when backend=sqlite
+  content_storage_enabled: true
+  keep_arxiv_version: false
+  # backend and database_url are set via DATABASE_URL / STORAGE_BACKEND env vars in docker-compose
+
+queries:
+  - NAME: Example — Deep Learning
+    OR:
+      - deep learning
+      - neural network
+    NOT:
+      - survey
+
+search:
+  sources: [arxiv]
+  max_results: 10
+  pull_every: 7
+  fill_enabled: true
+  max_lookback_days: 30
+
+# LLM (optional)
+llm:
+  enabled: false
+  # Uncomment and fill in to enable LLM enrichment:
+  # base_url: https://api.openai.com/v1
+  # model: gpt-4o-mini
+  # api_key: sk-...   # or set LLM_API_KEY env var
+  enable_translation: false
+  enable_summary: false
+  target_lang: Simplified Chinese
